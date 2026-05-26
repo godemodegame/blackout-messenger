@@ -246,6 +246,10 @@ textarea {
   background: #e7c4bd;
 }
 
+.icon-button.success {
+  background: #b8e9c9;
+}
+
 .screen-header {
   display: flex;
   align-items: center;
@@ -479,6 +483,12 @@ textarea {
 .thread-title {
   flex: 1;
   min-width: 0;
+}
+
+.thread-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .thread-header h1 {
@@ -914,6 +924,14 @@ textarea {
 
   .header-actions.chats-actions {
     width: auto;
+  }
+
+  .thread-actions {
+    width: 100%;
+  }
+
+  .thread-actions .retro-button {
+    flex: 1;
   }
 
   .header-actions .retro-button,

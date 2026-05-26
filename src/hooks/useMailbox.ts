@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Address, isAddress, isAddressEqual } from "viem";
-import { usePublicClient, useWalletClient, useWriteContract } from "wagmi";
+import { useSendTransaction } from "@privy-io/react-auth";
+import { Address, encodeFunctionData, isAddress, isAddressEqual } from "viem";
+import { usePublicClient } from "wagmi";
 import { appChain } from "../config/chains";
 import { env } from "../config/env";
 import { blackoutMessengerAbi } from "../contracts/blackoutMessengerAbi";
@@ -21,12 +22,12 @@ type ContractEncryptedInput = {
 
 export function useMailbox(account?: Address, peer?: Address, cofheReady = false) {
   const publicClient = usePublicClient({ chainId: appChain.id });
-  const { data: walletClient } = useWalletClient({ chainId: appChain.id });
-  const { writeContractAsync } = useWriteContract();
+  const { sendTransaction } = useSendTransaction();
   const [messages, setMessages] = useState<CachedMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [sendState, setSendState] = useState<SendState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [refreshCount, setRefreshCount] = useState(0);
 
   const activePeer = useMemo(() => {
     if (!peer || !isAddress(peer)) return undefined;
@@ -55,6 +56,7 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
 
       await saveMessages(account, merged);
       setMessages(merged);
+      setRefreshCount((count) => count + 1);
     } catch (refreshError) {
       setError(
         refreshError instanceof Error ? refreshError.message : "Could not read mailbox.",
@@ -116,7 +118,7 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
 
   const sendMessage = useCallback(
     async (recipient: Address, payload: MessagePayload) => {
-      if (!account || !publicClient || !walletClient) {
+      if (!account || !publicClient) {
         throw new Error("Connect before sending.");
       }
       if (!env.hasContractAddress) {
@@ -141,8 +143,7 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
 
         setSendState("submitting");
 
-        const txHash = await writeContractAsync({
-          address: env.contractAddress,
+        const data = encodeFunctionData({
           abi: blackoutMessengerAbi,
           functionName: "sendMessage",
           args: [
@@ -153,8 +154,18 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
             encryptedPayload.iv,
             encryptedPayload.bodyHash,
           ],
-          chainId: appChain.id,
         });
+        const { hash: txHash } = await sendTransaction(
+          {
+            to: env.contractAddress,
+            data,
+            chainId: appChain.id,
+          },
+          {
+            address: account,
+            sponsor: true,
+          },
+        );
 
         setSendState("confirming");
         await publicClient.waitForTransactionReceipt({ hash: txHash });
@@ -172,8 +183,7 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
       cofheReady,
       publicClient,
       refresh,
-      walletClient,
-      writeContractAsync,
+      sendTransaction,
     ],
   );
 
@@ -186,6 +196,7 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
     loading,
     error,
     sendState,
+    refreshCount,
     refresh,
     sendMessage,
     decryptMessage,

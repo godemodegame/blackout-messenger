@@ -15,6 +15,8 @@ import { useAccount, useBalance, useSwitchChain } from "wagmi";
 import {
   AlertTriangle,
   ArrowLeft,
+  Bell,
+  BellOff,
   Check,
   Copy,
   ExternalLink,
@@ -35,6 +37,11 @@ import { QrScannerDialog } from "./components/QrScannerDialog";
 import { WalletQrCode } from "./components/WalletQrCode";
 import { appChain } from "./config/chains";
 import { env, isConfigured } from "./config/env";
+import {
+  useBackgroundMessageNotifications,
+  useDocumentHidden,
+  type BackgroundNotificationPermission,
+} from "./hooks/useBackgroundMessageNotifications";
 import { useCofheConnection } from "./hooks/useCofheConnection";
 import { useMailbox } from "./hooks/useMailbox";
 import { CachedMessage, MessagePayload, StickerId } from "./types/messages";
@@ -83,6 +90,15 @@ export function App() {
     undefined,
     cofheStatus === "ready" && chainId === appChain.id,
   );
+  const isDocumentHidden = useDocumentHidden();
+  const backgroundNotifications = useBackgroundMessageNotifications({
+    account: address,
+    enabled: Boolean(ready && authenticated && address && chainId === appChain.id && isConfigured),
+    messages: allMailbox.messages,
+    onOpenPeer: openChat,
+    refreshCount: allMailbox.refreshCount,
+  });
+  const shouldRefreshAllChats = screen === "chats" || isDocumentHidden;
 
   useEffect(() => {
     if (wasAuthenticatedRef.current && !authenticated) {
@@ -106,7 +122,7 @@ export function App() {
   }, [address, allMailbox.refresh, chainId]);
 
   useEffect(() => {
-    if (screen !== "chats" || !address || chainId !== appChain.id || !isConfigured) return;
+    if (!shouldRefreshAllChats || !address || chainId !== appChain.id || !isConfigured) return;
 
     const refreshAllChats = async () => {
       if (allChatsRefreshInFlightRef.current) return;
@@ -118,12 +134,14 @@ export function App() {
       }
     };
 
+    if (isDocumentHidden) void refreshAllChats();
+
     const intervalId = window.setInterval(() => {
       void refreshAllChats();
     }, CHAT_REFRESH_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
-  }, [address, allMailbox.refresh, chainId, screen]);
+  }, [address, allMailbox.refresh, chainId, isDocumentHidden, shouldRefreshAllChats]);
 
   const conversations = useMemo(
     () => (address ? buildConversations(address, allMailbox.messages) : []),
@@ -222,6 +240,8 @@ export function App() {
             onBack={() => setScreen("chats")}
             onOpenProfile={() => openProfile(selectedPeer)}
             onSent={() => void allMailbox.refresh()}
+            notificationPermission={backgroundNotifications.permission}
+            onRequestNotifications={() => void backgroundNotifications.requestPermission()}
           />
         ) : screen === "profile" && profilePeer ? (
           <ProfileScreen
@@ -254,6 +274,8 @@ export function App() {
             onRefresh={() => void allMailbox.refresh()}
             onLogout={() => void logout()}
             onSwitchNetwork={requestNetworkSwitch}
+            notificationPermission={backgroundNotifications.permission}
+            onRequestNotifications={() => void backgroundNotifications.requestPermission()}
           />
         )}
       </section>
@@ -383,6 +405,34 @@ function AuthScreen({
   );
 }
 
+function NotificationButton({
+  permission,
+  onRequestPermission,
+}: {
+  permission: BackgroundNotificationPermission;
+  onRequestPermission: () => void;
+}) {
+  const isEnabled = permission === "granted";
+  const isDenied = permission === "denied";
+  const isUnsupported = permission === "unsupported";
+  const title = notificationPermissionTitle(permission);
+  const Icon = isDenied || isUnsupported ? BellOff : Bell;
+  const stateClass = isEnabled ? " success" : isDenied ? " danger" : "";
+
+  return (
+    <button
+      className={`icon-button${stateClass}`}
+      type="button"
+      onClick={onRequestPermission}
+      disabled={isEnabled || isDenied || isUnsupported}
+      title={title}
+      aria-label={title}
+    >
+      <Icon size={16} />
+    </button>
+  );
+}
+
 function ChatListScreen({
   account,
   chainId,
@@ -401,6 +451,8 @@ function ChatListScreen({
   onRefresh,
   onLogout,
   onSwitchNetwork,
+  notificationPermission,
+  onRequestNotifications,
 }: {
   account: Address;
   chainId?: number;
@@ -419,6 +471,8 @@ function ChatListScreen({
   onRefresh: () => void;
   onLogout: () => void;
   onSwitchNetwork: () => void;
+  notificationPermission: BackgroundNotificationPermission;
+  onRequestNotifications: () => void;
 }) {
   const [scannerOpen, setScannerOpen] = useState(false);
   const trimmedSearch = search.trim();
@@ -448,6 +502,10 @@ function ChatListScreen({
           >
             <UserRound size={16} />
           </button>
+          <NotificationButton
+            permission={notificationPermission}
+            onRequestPermission={onRequestNotifications}
+          />
           <button
             className="icon-button"
             onClick={onRefresh}
@@ -583,6 +641,8 @@ function ChatScreen({
   onBack,
   onOpenProfile,
   onSent,
+  notificationPermission,
+  onRequestNotifications,
 }: {
   ready: boolean;
   authenticated: boolean;
@@ -594,6 +654,8 @@ function ChatScreen({
   onBack: () => void;
   onOpenProfile: () => void;
   onSent: () => void;
+  notificationPermission: BackgroundNotificationPermission;
+  onRequestNotifications: () => void;
 }) {
   const [text, setText] = useState(initialText);
   const [selectedSticker, setSelectedSticker] = useState<StickerId>();
@@ -712,10 +774,16 @@ function ChatScreen({
           <span className="eyebrow">Encrypted chat</span>
           <h1>{shortAddress(peer)}</h1>
         </div>
-        <button className="retro-button" type="button" onClick={onOpenProfile}>
-          <UserRound size={16} />
-          Profile
-        </button>
+        <div className="thread-actions">
+          <NotificationButton
+            permission={notificationPermission}
+            onRequestPermission={onRequestNotifications}
+          />
+          <button className="retro-button" type="button" onClick={onOpenProfile}>
+            <UserRound size={16} />
+            Profile
+          </button>
+        </div>
       </header>
 
       <div className="message-list" aria-live="polite">
@@ -959,6 +1027,13 @@ function formatBalance(balance: {
   const [whole, fraction = ""] = formatUnits(balance.value, balance.decimals).split(".");
   const trimmedFraction = fraction.slice(0, 6).replace(/0+$/, "");
   return trimmedFraction ? `${whole}.${trimmedFraction}` : whole;
+}
+
+function notificationPermissionTitle(permission: BackgroundNotificationPermission) {
+  if (permission === "granted") return "Background notifications enabled";
+  if (permission === "denied") return "Notifications are blocked in this browser";
+  if (permission === "unsupported") return "Browser notifications unavailable";
+  return "Enable background notifications";
 }
 
 function sendStateText(state: string) {

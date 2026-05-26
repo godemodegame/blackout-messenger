@@ -23,6 +23,10 @@ VITE_PRIVY_APP_ID=
 ```
 
 The app is configured to create embedded wallets for users who log in without an existing wallet.
+To let new embedded wallets send without holding testnet ETH, enable TEE wallet execution in
+Privy, then enable gas sponsorship for the testnet you are using. If you sponsor transactions
+directly from the browser, also allow client-side sponsored transactions in Privy's gas
+sponsorship settings.
 
 ## 3. Configure RPC URLs
 
