@@ -161,11 +161,8 @@ export function App() {
       <section className="window app-window">
         <header className="title-bar">
           <div className="title-wrap">
-            <span className="fhenix-logo-plate" aria-label="Fhenix">
-              <img src="/brand/fhenix-logo.svg" alt="Fhenix" />
-            </span>
-            <span className="brand-divider" aria-hidden="true" />
-            <span className="app-title">Blackout Messenger</span>
+            <span className="app-glyph">B</span>
+            <span>Blackout Messenger</span>
           </div>
           <div className="window-buttons" aria-hidden="true">
             <span />
