@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { TASK_MANAGER_ADDRESS } from "@cofhe/sdk";
 import { useSendTransaction } from "@privy-io/react-auth";
-import { Address, encodeFunctionData, isAddress, isAddressEqual } from "viem";
-import { usePublicClient } from "wagmi";
+import {
+  Address,
+  Hex,
+  PublicClient,
+  encodeFunctionData,
+  isAddress,
+  isAddressEqual,
+} from "viem";
+import { usePublicClient, useWalletClient } from "wagmi";
 import { appChain } from "../config/chains";
 import { env } from "../config/env";
 import { blackoutMessengerAbi } from "../contracts/blackoutMessengerAbi";
@@ -20,8 +28,32 @@ type ContractEncryptedInput = {
   signature: `0x${string}`;
 };
 
+const cofheTaskManagerAbi = [
+  {
+    type: "function",
+    name: "allow",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "ctHash", type: "uint256" },
+      { name: "account", type: "address" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "isAllowed",
+    stateMutability: "view",
+    inputs: [
+      { name: "ctHash", type: "uint256" },
+      { name: "account", type: "address" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
+
 export function useMailbox(account?: Address, peer?: Address, cofheReady = false) {
   const publicClient = usePublicClient({ chainId: appChain.id });
+  const { data: walletClient } = useWalletClient({ chainId: appChain.id });
   const { sendTransaction } = useSendTransaction();
   const [messages, setMessages] = useState<CachedMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -68,15 +100,23 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
 
   const decryptMessage = useCallback(
     async (messageId: bigint) => {
-      if (!account || !cofheReady) return;
+      if (!account || !cofheReady || !publicClient) return;
       const target = messages.find((message) => message.id === messageId);
       if (!target) return;
 
       try {
-        await ensureCofhePermit();
+        const permitAccount = walletClient?.account?.address;
+        const permit = await ensureCofhePermit(permitAccount);
+        await ensureDecryptorAllowed({
+          account,
+          decryptor: permit.issuer as Address,
+          handles: [target.keyPartA, target.keyPartB],
+          publicClient,
+          sendTransaction,
+        });
         const [keyPartA, keyPartB] = await Promise.all([
-          decryptKeyPart(target.keyPartA),
-          decryptKeyPart(target.keyPartB),
+          decryptKeyPart(target.keyPartA, permit),
+          decryptKeyPart(target.keyPartB, permit),
         ]);
         const payload = await decryptPayload(
           target.encryptedBody,
@@ -104,7 +144,7 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
                 ...message,
                 decryptError:
                   decryptError instanceof Error
-                    ? decryptError.message
+                    ? formatDecryptError(decryptError.message)
                     : "Could not decrypt message.",
               }
             : message,
@@ -113,7 +153,7 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
         await saveMessages(account, updated);
       }
     },
-    [account, cofheReady, messages],
+    [account, cofheReady, messages, publicClient, sendTransaction, walletClient?.account.address],
   );
 
   const sendMessage = useCallback(
@@ -201,6 +241,60 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
     sendMessage,
     decryptMessage,
   };
+}
+
+async function ensureDecryptorAllowed({
+  account,
+  decryptor,
+  handles,
+  publicClient,
+  sendTransaction,
+}: {
+  account: Address;
+  decryptor: Address;
+  handles: [Hex, Hex];
+  publicClient: PublicClient;
+  sendTransaction: ReturnType<typeof useSendTransaction>["sendTransaction"];
+}) {
+  if (isAddressEqual(account, decryptor)) return;
+
+  for (const handle of handles) {
+    const isAllowed = await publicClient.readContract({
+      address: TASK_MANAGER_ADDRESS,
+      abi: cofheTaskManagerAbi,
+      functionName: "isAllowed",
+      args: [BigInt(handle), decryptor],
+    });
+
+    if (isAllowed) continue;
+
+    const data = encodeFunctionData({
+      abi: cofheTaskManagerAbi,
+      functionName: "allow",
+      args: [BigInt(handle), decryptor],
+    });
+    const { hash } = await sendTransaction(
+      {
+        to: TASK_MANAGER_ADDRESS,
+        data,
+        chainId: appChain.id,
+      },
+      {
+        address: account,
+        sponsor: true,
+      },
+    );
+
+    await publicClient.waitForTransactionReceipt({ hash });
+  }
+}
+
+function formatDecryptError(message: string) {
+  if (message.includes("sealOutput request failed: HTTP 500")) {
+    return "Fhenix could not seal this key yet. Retry decrypt in a few seconds. (HTTP 500)";
+  }
+
+  return message;
 }
 
 function asContractInput(input: {

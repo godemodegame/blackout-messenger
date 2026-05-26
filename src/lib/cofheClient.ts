@@ -28,9 +28,10 @@ const config = createCofheConfig({
 });
 
 export const cofheClient = createCofheClient(config);
+export type CofhePermit = NonNullable<ReturnType<typeof cofheClient.permits.getActivePermit>>;
 
 let tfheWasmReady: Promise<void> | undefined;
-let selfPermitReady: Promise<void> | undefined;
+const selfPermitReadyByAccount = new Map<string, Promise<CofhePermit>>();
 
 function ensureTfheWasm() {
   tfheWasmReady ??= initTfhe(tfheWasmUrl).then(() => undefined);
@@ -43,18 +44,31 @@ export async function connectCofhe(publicClient: unknown, walletClient: unknown)
   return cofheClient;
 }
 
-export async function ensureCofhePermit() {
-  const activePermit = cofheClient.permits.getActivePermit(appChain.id);
-  if (activePermit) return;
+export async function ensureCofhePermit(account?: string) {
+  const activePermit = cofheClient.permits.getActivePermit(appChain.id, account);
+  if (activePermit?.type === "self") return activePermit;
 
-  selfPermitReady ??= cofheClient.permits
-    .getOrCreateSelfPermit(appChain.id)
-    .then(() => undefined)
+  const key = `${appChain.id}:${account || "connected"}`;
+  const existing = selfPermitReadyByAccount.get(key);
+  if (existing) return existing;
+
+  const ready = cofheClient.permits
+    .getOrCreateSelfPermit(
+      appChain.id,
+      account,
+      account
+        ? {
+            issuer: account,
+            name: "Blackout decrypt permit",
+          }
+        : undefined,
+    )
     .finally(() => {
-      selfPermitReady = undefined;
+      selfPermitReadyByAccount.delete(key);
     });
+  selfPermitReadyByAccount.set(key, ready);
 
-  return selfPermitReady;
+  return ready;
 }
 
 export async function encryptKeyParts(keyPartA: bigint, keyPartB: bigint) {
@@ -67,10 +81,13 @@ export async function encryptKeyParts(keyPartA: bigint, keyPartB: bigint) {
   return [encryptedPartA, encryptedPartB] as const;
 }
 
-export async function decryptKeyPart(handle: bigint | string) {
-  return cofheClient
+export async function decryptKeyPart(handle: bigint | string, permit?: CofhePermit) {
+  const builder = cofheClient
     .decryptForView(handle, FheTypes.Uint128)
     .setChainId(appChain.id)
-    .set404RetryTimeout(20_000)
-    .execute();
+    .set404RetryTimeout(20_000);
+
+  if (permit) builder.withPermit(permit);
+
+  return builder.execute();
 }
