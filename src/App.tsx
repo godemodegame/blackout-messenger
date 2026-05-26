@@ -74,6 +74,7 @@ export function App() {
   const [walletNotice, setWalletNotice] = useState<string | null>(null);
   const wasAuthenticatedRef = useRef(false);
   const autoWalletCreationRef = useRef<string | null>(null);
+  const allChatsRefreshInFlightRef = useRef(false);
 
   const isWrongNetwork = Boolean(address && chainId && chainId !== appChain.id);
   const { status: cofheStatus, error: cofheError } = useCofheConnection();
@@ -103,6 +104,26 @@ export function App() {
     if (!address || chainId !== appChain.id || !isConfigured) return;
     void allMailbox.refresh();
   }, [address, allMailbox.refresh, chainId]);
+
+  useEffect(() => {
+    if (screen !== "chats" || !address || chainId !== appChain.id || !isConfigured) return;
+
+    const refreshAllChats = async () => {
+      if (allChatsRefreshInFlightRef.current) return;
+      allChatsRefreshInFlightRef.current = true;
+      try {
+        await allMailbox.refresh();
+      } finally {
+        allChatsRefreshInFlightRef.current = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void refreshAllChats();
+    }, CHAT_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [address, allMailbox.refresh, chainId, screen]);
 
   const conversations = useMemo(
     () => (address ? buildConversations(address, allMailbox.messages) : []),
