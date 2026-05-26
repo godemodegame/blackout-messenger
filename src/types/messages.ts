@@ -1,12 +1,18 @@
 import { Address, Hex } from "viem";
 
 export type StickerId =
-  | "smile-dial"
-  | "floppy-secret"
-  | "radio-heart"
-  | "warning-star"
-  | "ghost-packet"
-  | "burn-after-reading";
+  | "brain-blowing"
+  | "clown"
+  | "cry"
+  | "death"
+  | "demon"
+  | "hot"
+  | "idk"
+  | "laugh"
+  | "love"
+  | "puke"
+  | "thief"
+  | "tired";
 
 export type MessagePayload =
   | {

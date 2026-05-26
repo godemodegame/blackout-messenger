@@ -573,7 +573,6 @@ textarea {
   width: min(150px, 100%);
   aspect-ratio: 1;
   object-fit: contain;
-  image-rendering: pixelated;
 }
 
 .message-ok,
@@ -646,6 +645,7 @@ textarea {
 .sticker-button img {
   width: 42px;
   height: 42px;
+  object-fit: contain;
 }
 
 .retro-textarea {

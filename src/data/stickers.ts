@@ -6,34 +6,64 @@ export const stickers: Array<{
   src: string;
 }> = [
   {
-    id: "smile-dial",
-    label: "Dial Smile",
-    src: "/stickers/smile-dial.svg",
+    id: "brain-blowing",
+    label: "Brain Blowing",
+    src: "/stickers/emojis/brain-blowing.png",
   },
   {
-    id: "floppy-secret",
-    label: "Floppy Secret",
-    src: "/stickers/floppy-secret.svg",
+    id: "clown",
+    label: "Clown",
+    src: "/stickers/emojis/clown.png",
   },
   {
-    id: "radio-heart",
-    label: "Radio Heart",
-    src: "/stickers/radio-heart.svg",
+    id: "cry",
+    label: "Cry",
+    src: "/stickers/emojis/cry.png",
   },
   {
-    id: "warning-star",
-    label: "Warning Star",
-    src: "/stickers/warning-star.svg",
+    id: "death",
+    label: "Death",
+    src: "/stickers/emojis/death.png",
   },
   {
-    id: "ghost-packet",
-    label: "Ghost Packet",
-    src: "/stickers/ghost-packet.svg",
+    id: "demon",
+    label: "Demon",
+    src: "/stickers/emojis/demon.png",
   },
   {
-    id: "burn-after-reading",
-    label: "Burn Note",
-    src: "/stickers/burn-after-reading.svg",
+    id: "hot",
+    label: "Hot",
+    src: "/stickers/emojis/hot.png",
+  },
+  {
+    id: "idk",
+    label: "IDK",
+    src: "/stickers/emojis/idk.png",
+  },
+  {
+    id: "laugh",
+    label: "Laugh",
+    src: "/stickers/emojis/laugh.png",
+  },
+  {
+    id: "love",
+    label: "Love",
+    src: "/stickers/emojis/love.png",
+  },
+  {
+    id: "puke",
+    label: "Puke",
+    src: "/stickers/emojis/puke.png",
+  },
+  {
+    id: "thief",
+    label: "Thief",
+    src: "/stickers/emojis/thief.png",
+  },
+  {
+    id: "tired",
+    label: "Tired",
+    src: "/stickers/emojis/tired.png",
   },
 ];
 
