@@ -1,0 +1,9 @@
+{
+  "network": "base-sepolia",
+  "chainId": 84532,
+  "contractName": "BlackoutMessenger",
+  "address": "0x2C3b9309c0f504Fd10Daf72381A29f027dc846c2",
+  "deployer": "0x71Ba5f956c517f76e8e6E1f6bC35e430B8e29A4e",
+  "recoveredFromNonce": 0,
+  "deploymentBlock": 41977780
+}

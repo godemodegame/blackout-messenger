@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Dial smile sticker">
+  <rect width="128" height="128" fill="#f5f0df"/>
+  <rect x="8" y="8" width="112" height="112" fill="#f4d247" stroke="#111" stroke-width="4"/>
+  <circle cx="64" cy="64" r="38" fill="#ffe577" stroke="#111" stroke-width="4"/>
+  <rect x="42" y="50" width="12" height="12" fill="#111"/>
+  <rect x="74" y="50" width="12" height="12" fill="#111"/>
+  <path d="M42 78h44v8H42z" fill="#111"/>
+  <path d="M24 28h16v8H24zm64 0h16v8H88z" fill="#111"/>
+</svg>
