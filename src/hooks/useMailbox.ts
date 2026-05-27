@@ -111,6 +111,11 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
       if (!target) return;
 
       try {
+        const clearedMessages = messages.map((message) =>
+          message.id === messageId ? { ...message, decryptError: undefined } : message,
+        );
+        setMessages(clearedMessages);
+        await saveMessages(account, clearedMessages);
         const permitAccount = walletClient?.account?.address;
         const permit = await ensureCofhePermit(permitAccount);
         await ensureDecryptorAllowed({

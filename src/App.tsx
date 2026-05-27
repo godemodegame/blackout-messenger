@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   useConnectWallet,
   useCreateWallet,
@@ -57,6 +57,7 @@ import { CachedMessage, MessagePayload, StickerId } from "./types/messages";
 
 const MAX_TEXT_LENGTH = 1200;
 const CHAT_REFRESH_INTERVAL_MS = 10_000;
+const AUTO_DECRYPT_RETRY_DELAY_MS = 60_000;
 const initialParams = new URLSearchParams(window.location.search);
 const initialPeer = readInitialPeer();
 const initialText = (initialParams.get("text") || "").slice(0, MAX_TEXT_LENGTH);
@@ -770,6 +771,7 @@ function ChatScreen({
   const autoRefreshInFlightRef = useRef(false);
   const decryptingRef = useRef(new Set<string>());
   const attemptedDecryptRef = useRef(new Set<string>());
+  const decryptRetryAfterRef = useRef(new Map<string, number>());
   const mailbox = useMailbox(
     account,
     group ? undefined : peer,
@@ -811,14 +813,18 @@ function ChatScreen({
 
   useEffect(() => {
     if (cofheStatus !== "ready") return;
+    const now = Date.now();
 
     const encryptedMessages = mailbox.messages.filter((message) => {
       const id = message.id.toString();
+      const hasRetryableError = isRetryableDecryptError(message.decryptError);
+      const retryAfter = decryptRetryAfterRef.current.get(id) || 0;
       return (
         !message.payload &&
-        !message.decryptError &&
+        (!message.decryptError || hasRetryableError) &&
         !decryptingRef.current.has(id) &&
-        !attemptedDecryptRef.current.has(id)
+        (!attemptedDecryptRef.current.has(id) || hasRetryableError) &&
+        retryAfter <= now
       );
     });
 
@@ -826,6 +832,7 @@ function ChatScreen({
       const id = message.id.toString();
       decryptingRef.current.add(id);
       attemptedDecryptRef.current.add(id);
+      decryptRetryAfterRef.current.set(id, Date.now() + AUTO_DECRYPT_RETRY_DELAY_MS);
       setDecryptingIds((current) => new Set(current).add(id));
       void mailbox.decryptMessage(message.id).finally(() => {
         decryptingRef.current.delete(id);
@@ -837,6 +844,28 @@ function ChatScreen({
       });
     });
   }, [cofheStatus, mailbox.decryptMessage, mailbox.messages]);
+
+  const handleDecrypt = useCallback(
+    async (messageId: bigint) => {
+      const id = messageId.toString();
+      attemptedDecryptRef.current.delete(id);
+      decryptRetryAfterRef.current.delete(id);
+      decryptingRef.current.add(id);
+      setDecryptingIds((current) => new Set(current).add(id));
+
+      try {
+        await mailbox.decryptMessage(messageId);
+      } finally {
+        decryptingRef.current.delete(id);
+        setDecryptingIds((current) => {
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        });
+      }
+    },
+    [mailbox.decryptMessage],
+  );
 
   const sendBlocker = getSendBlocker({
     ready,
@@ -934,7 +963,7 @@ function ChatScreen({
               account={account}
               decryptDisabled={cofheStatus !== "ready"}
               decrypting={decryptingIds.has(message.id.toString())}
-              onDecrypt={(messageId) => void mailbox.decryptMessage(messageId)}
+              onDecrypt={(messageId) => void handleDecrypt(messageId)}
             />
           ))
         ) : (
@@ -977,6 +1006,10 @@ function ChatScreen({
       </div>
     </div>
   );
+}
+
+function isRetryableDecryptError(error?: string) {
+  return Boolean(error?.includes("HTTP 500") || error?.includes("Try decrypt again shortly"));
 }
 
 function GroupDialog({
