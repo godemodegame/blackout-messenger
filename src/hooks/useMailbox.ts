@@ -32,6 +32,7 @@ type ContractEncryptedInput = {
   utype: number;
   signature: `0x${string}`;
 };
+type SendTransaction = ReturnType<typeof useSendTransaction>["sendTransaction"];
 
 const cofheTaskManagerAbi = [
   {
@@ -210,16 +211,14 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
             encryptedPayload.bodyHash,
           ],
         });
-        const { hash: txHash } = await sendTransaction(
+        const { hash: txHash } = await sendTransactionWithSponsorFallback(
+          sendTransaction,
           {
             to: env.contractAddress,
             data,
             chainId: appChain.id,
           },
-          {
-            address: account,
-            sponsor: true,
-          },
+          account,
         );
 
         setSendState("confirming");
@@ -272,7 +271,7 @@ async function ensureDecryptorAllowed({
   decryptor: Address;
   handles: [Hex, Hex];
   publicClient: PublicClient;
-  sendTransaction: ReturnType<typeof useSendTransaction>["sendTransaction"];
+  sendTransaction: SendTransaction;
 }) {
   if (isAddressEqual(account, decryptor)) return;
 
@@ -291,19 +290,39 @@ async function ensureDecryptorAllowed({
       functionName: "allow",
       args: [BigInt(handle), decryptor],
     });
-    const { hash } = await sendTransaction(
+    const { hash } = await sendTransactionWithSponsorFallback(
+      sendTransaction,
       {
         to: TASK_MANAGER_ADDRESS,
         data,
         chainId: appChain.id,
       },
-      {
-        address: account,
-        sponsor: true,
-      },
+      account,
     );
 
     await publicClient.waitForTransactionReceipt({ hash });
+  }
+}
+
+async function sendTransactionWithSponsorFallback(
+  sendTransaction: SendTransaction,
+  request: Parameters<SendTransaction>[0],
+  account: Address,
+) {
+  try {
+    return await sendTransaction(request, {
+      address: account,
+      sponsor: true,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("Cannot sponsor transactions for externally connected wallet")) {
+      throw error;
+    }
+
+    return sendTransaction(request, {
+      address: account,
+    });
   }
 }
 
