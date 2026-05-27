@@ -1012,21 +1012,21 @@ textarea {
   bottom: 8px;
   right: 10px;
   z-index: 20;
-  font-size: 10px;
-  opacity: 0.85;
+  font-size: 12px;
+  opacity: 0.9;
 }
 
 .fhenix-badge a {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   color: #00d8d8;
   text-decoration: none;
-  background: rgba(0, 36, 60, 0.85);
+  background: rgba(0, 36, 60, 0.9);
   border: 1px solid #003a4d;
-  padding: 2px 6px 2px 4px;
+  padding: 3px 9px 3px 6px;
   border-radius: 2px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   transition: opacity 0.1s ease;
 }
 
@@ -1036,7 +1036,7 @@ textarea {
 }
 
 .fhenix-badge img {
-  height: 12px;
+  height: 15px;
   width: auto;
   image-rendering: pixelated;
   display: block;
