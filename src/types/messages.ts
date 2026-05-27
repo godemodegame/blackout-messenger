@@ -1,18 +1,30 @@
 import { Address, Hex } from "viem";
 
 export type StickerId =
+  | "alien"
+  | "angel"
   | "brain-blowing"
+  | "celebration"
   | "clown"
   | "cry"
   | "death"
   | "demon"
+  | "fight"
+  | "fries"
+  | "gun"
+  | "hi"
   | "hot"
   | "idk"
   | "laugh"
+  | "logo"
   | "love"
+  | "no"
   | "puke"
+  | "shining"
+  | "sky"
   | "thief"
-  | "tired";
+  | "tired"
+  | "yes";
 
 export type GroupPayloadMeta = {
   id: string;
