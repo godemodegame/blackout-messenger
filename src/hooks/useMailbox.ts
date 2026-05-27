@@ -37,6 +37,9 @@ type ContractEncryptedInput = {
 };
 type SendTransaction = ReturnType<typeof useSendTransaction>["sendTransaction"];
 type ActiveWallet = ReturnType<typeof useActiveWallet>["wallet"];
+type MailboxOptions = {
+  publicOnly?: boolean;
+};
 
 const cofheTaskManagerAbi = [
   {
@@ -61,7 +64,12 @@ const cofheTaskManagerAbi = [
   },
 ] as const;
 
-export function useMailbox(account?: Address, peer?: Address, cofheReady = false) {
+export function useMailbox(
+  account?: Address,
+  peer?: Address,
+  cofheReady = false,
+  options: MailboxOptions = {},
+) {
   const publicClient = usePublicClient({ chainId: appChain.id });
   const { data: walletClient } = useWalletClient({ chainId: appChain.id });
   const { wallet: activeWallet } = useActiveWallet();
@@ -72,6 +80,7 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
   const [error, setError] = useState<string | null>(null);
   const [refreshCount, setRefreshCount] = useState(0);
   const sendingRef = useRef(false);
+  const publicOnly = options.publicOnly ?? false;
 
   const activePeer = useMemo(() => {
     if (!peer || !isAddress(peer)) return undefined;
@@ -81,8 +90,8 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
   const loadCached = useCallback(async () => {
     if (!account) return;
     const cached = await getCachedMessages(account, activePeer);
-    setMessages(cached);
-  }, [account, activePeer]);
+    setMessages(publicOnly ? cached.filter((message) => message.isPublic) : cached);
+  }, [account, activePeer, publicOnly]);
 
   const refresh = useCallback(async () => {
     if (!account || !publicClient) return;
@@ -90,9 +99,19 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
     setError(null);
 
     try {
-      const chainMessages = await fetchMailboxMessages(publicClient, account, activePeer);
+      const chainMessages = await fetchMailboxMessages(
+        publicClient,
+        account,
+        activePeer,
+        publicOnly,
+      );
       const cached = await getCachedMessages(account, activePeer);
-      const cachedById = new Map(cached.map((message) => [message.id.toString(), message]));
+      const cachedMessages = publicOnly
+        ? cached.filter((message) => message.isPublic)
+        : cached;
+      const cachedById = new Map(
+        cachedMessages.map((message) => [message.id.toString(), message]),
+      );
       const merged = chainMessages.map((message) => ({
         ...message,
         ...cachedById.get(message.id.toString()),
@@ -108,7 +127,7 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
     } finally {
       setLoading(false);
     }
-  }, [account, activePeer, publicClient]);
+  }, [account, activePeer, publicClient, publicOnly]);
 
   const decryptMessage = useCallback(
     async (messageId: bigint) => {

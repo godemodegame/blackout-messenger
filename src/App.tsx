@@ -58,6 +58,7 @@ import { CachedMessage, MessagePayload, StickerId } from "./types/messages";
 
 const MAX_TEXT_LENGTH = 1200;
 const CHAT_REFRESH_INTERVAL_MS = 10_000;
+const RATE_LIMIT_REFRESH_INTERVAL_MS = 60_000;
 const AUTO_DECRYPT_RETRY_DELAY_MS = 60_000;
 const PUBLIC_CHAT_ID = "public";
 const PUBLIC_CHAT_NAME = "Everyone";
@@ -815,6 +816,7 @@ function ChatScreen({
     account,
     group ? undefined : peer,
     cofheStatus === "ready" && chainId === appChain.id,
+    { publicOnly: isPublicChat },
   );
   const visibleMessages = useMemo(
     () =>
@@ -845,12 +847,15 @@ function ChatScreen({
       }
     };
 
+    const refreshInterval = isRateLimitError(mailbox.error)
+      ? RATE_LIMIT_REFRESH_INTERVAL_MS
+      : CHAT_REFRESH_INTERVAL_MS;
     const intervalId = window.setInterval(() => {
       void refreshChat();
-    }, CHAT_REFRESH_INTERVAL_MS);
+    }, refreshInterval);
 
     return () => window.clearInterval(intervalId);
-  }, [chainId, group?.id, mailbox.refresh, peer]);
+  }, [chainId, group?.id, mailbox.error, mailbox.refresh, peer]);
 
   useEffect(() => {
     if (cofheStatus !== "ready") return;
@@ -1085,6 +1090,10 @@ function ChatScreen({
 
 function isRetryableDecryptError(error?: string) {
   return Boolean(error?.includes("HTTP 500") || error?.includes("Try decrypt again shortly"));
+}
+
+function isRateLimitError(error?: string | null) {
+  return Boolean(error?.toLowerCase().includes("rate limit"));
 }
 
 function GroupDialog({

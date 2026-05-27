@@ -118,10 +118,22 @@ export async function fetchMailboxMessages(
   publicClient: PublicClient,
   account: Address,
   peer?: Address,
+  publicOnly = false,
 ): Promise<CachedMessage[]> {
   if (!env.hasContractAddress) return [];
 
   const latestBlock = await publicClient.getBlockNumber();
+  if (publicOnly) {
+    const publicMessages = await getMessageLogs(publicClient, latestBlock, {
+      address: env.contractAddress,
+      event: publicMessageSentAbiItem,
+    });
+
+    return publicMessages
+      .map(decodePublicMessageLog)
+      .sort((left, right) => Number(left.id - right.id));
+  }
+
   const [incoming, outgoing, publicMessages] = peer
     ? await Promise.all([
         getMessageLogs(publicClient, latestBlock, {
