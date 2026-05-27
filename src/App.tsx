@@ -768,6 +768,7 @@ function ChatScreen({
   const [selectedSticker, setSelectedSticker] = useState<StickerId>();
   const [localNotice, setLocalNotice] = useState<string | null>(null);
   const [decryptingIds, setDecryptingIds] = useState<Set<string>>(() => new Set());
+  const [decryptRetryTick, setDecryptRetryTick] = useState(0);
   const autoRefreshInFlightRef = useRef(false);
   const decryptingRef = useRef(new Set<string>());
   const attemptedDecryptRef = useRef(new Set<string>());
@@ -843,7 +844,27 @@ function ChatScreen({
         });
       });
     });
-  }, [cofheStatus, mailbox.decryptMessage, mailbox.messages]);
+  }, [cofheStatus, decryptRetryTick, mailbox.decryptMessage, mailbox.messages]);
+
+  useEffect(() => {
+    if (cofheStatus !== "ready") return;
+
+    let nextRetryAt: number | undefined;
+    mailbox.messages.forEach((message) => {
+      if (message.payload || !isRetryableDecryptError(message.decryptError)) return;
+      const retryAfter = decryptRetryAfterRef.current.get(message.id.toString()) || Date.now();
+      nextRetryAt = nextRetryAt ? Math.min(nextRetryAt, retryAfter) : retryAfter;
+    });
+
+    if (!nextRetryAt) return;
+
+    const retryDelay = Math.max(1_000, nextRetryAt - Date.now());
+    const retryTimer = window.setTimeout(() => {
+      setDecryptRetryTick((tick) => tick + 1);
+    }, retryDelay);
+
+    return () => window.clearTimeout(retryTimer);
+  }, [cofheStatus, decryptRetryTick, mailbox.messages]);
 
   const handleDecrypt = useCallback(
     async (messageId: bigint) => {
