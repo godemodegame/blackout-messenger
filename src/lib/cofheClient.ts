@@ -24,7 +24,7 @@ if (!cofheChain) {
 
 const config = createCofheConfig({
   supportedChains: [cofheChain],
-  useWorkers: false,
+  useWorkers: true,
 });
 
 export const cofheClient = createCofheClient(config);

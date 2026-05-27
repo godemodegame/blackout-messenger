@@ -730,7 +730,8 @@ function ChatScreen({
     chainId,
     hasPayload: Boolean(text.trim() || selectedSticker),
   });
-  const canSend = !sendBlocker;
+  const isSending = isSendInProgress(mailbox.sendState);
+  const canSend = !sendBlocker && !isSending;
 
   async function handleSend() {
     const trimmedText = text.trim();
@@ -1037,12 +1038,16 @@ function notificationPermissionTitle(permission: BackgroundNotificationPermissio
 }
 
 function sendStateText(state: string) {
-  if (state === "encrypting") return "Encrypting body and Fhenix key chunks...";
-  if (state === "submitting") return "Submitting encrypted packet to testnet...";
+  if (state === "encrypting") return "Preparing encrypted key proof for wallet signing...";
+  if (state === "submitting") return "Open your wallet to sign the transaction...";
   if (state === "confirming") return "Waiting for block confirmation...";
   if (state === "done") return "Message dropped on-chain.";
   if (state === "error") return "Send failed.";
   return "Ready.";
+}
+
+function isSendInProgress(state: string) {
+  return state === "encrypting" || state === "submitting" || state === "confirming";
 }
 
 function getSendBlocker({

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TASK_MANAGER_ADDRESS } from "@cofhe/sdk";
 import { useSendTransaction } from "@privy-io/react-auth";
 import {
@@ -14,7 +14,12 @@ import { appChain } from "../config/chains";
 import { env } from "../config/env";
 import { blackoutMessengerAbi } from "../contracts/blackoutMessengerAbi";
 import { fetchMailboxMessages } from "../lib/chainMessages";
-import { decryptKeyPart, encryptKeyParts, ensureCofhePermit } from "../lib/cofheClient";
+import {
+  decryptKeyPart,
+  encryptKeyParts,
+  ensureCofhePermit,
+  type CofhePermit,
+} from "../lib/cofheClient";
 import { decryptPayload, encryptPayload } from "../lib/messageCrypto";
 import { getCachedMessages, saveMessages } from "../lib/localCache";
 import { CachedMessage, MessagePayload } from "../types/messages";
@@ -60,6 +65,7 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
   const [sendState, setSendState] = useState<SendState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [refreshCount, setRefreshCount] = useState(0);
+  const sendingRef = useRef(false);
 
   const activePeer = useMemo(() => {
     if (!peer || !isAddress(peer)) return undefined;
@@ -115,8 +121,8 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
           sendTransaction,
         });
         const [keyPartA, keyPartB] = await Promise.all([
-          decryptKeyPart(target.keyPartA, permit),
-          decryptKeyPart(target.keyPartB, permit),
+          decryptKeyPartWithRetry(target.keyPartA, permit),
+          decryptKeyPartWithRetry(target.keyPartB, permit),
         ]);
         const payload = await decryptPayload(
           target.encryptedBody,
@@ -158,6 +164,9 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
 
   const sendMessage = useCallback(
     async (recipient: Address, payload: MessagePayload) => {
+      if (sendingRef.current) {
+        throw new Error("A send is already preparing. Wait for the wallet prompt.");
+      }
       if (!account || !publicClient) {
         throw new Error("Connect before sending.");
       }
@@ -173,6 +182,7 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
 
       setSendState("encrypting");
       setError(null);
+      sendingRef.current = true;
 
       try {
         const encryptedPayload = await encryptPayload(payload);
@@ -213,9 +223,12 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
         await refresh();
       } catch (sendError) {
         setSendState("error");
-        const message = sendError instanceof Error ? sendError.message : "Send failed.";
+        const message =
+          sendError instanceof Error ? formatSendError(sendError.message) : "Send failed.";
         setError(message);
         throw new Error(message);
+      } finally {
+        sendingRef.current = false;
       }
     },
     [
@@ -291,7 +304,45 @@ async function ensureDecryptorAllowed({
 
 function formatDecryptError(message: string) {
   if (message.includes("sealOutput request failed: HTTP 500")) {
-    return "Fhenix could not seal this key yet. Retry decrypt in a few seconds. (HTTP 500)";
+    return "Fhenix could not seal this key yet after a few retries. Try decrypt again shortly. (HTTP 500)";
+  }
+
+  return message;
+}
+
+async function decryptKeyPartWithRetry(handle: bigint | string, permit?: CofhePermit) {
+  const retryDelays = [1_500, 3_000, 5_000];
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+    try {
+      return await decryptKeyPart(handle, permit);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (!isRetryableSealError(message) || attempt === retryDelays.length) {
+        throw error;
+      }
+
+      await wait(retryDelays[attempt]);
+    }
+  }
+
+  throw lastError;
+}
+
+function isRetryableSealError(message: string) {
+  return message.includes("sealOutput request failed: HTTP 500");
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function formatSendError(message: string) {
+  if (message.includes("ZK proof verification failed") && message.includes("Failed to fetch")) {
+    return "Fhenix ZK verifier could not be reached. Check connection and try sending again.";
   }
 
   return message;
