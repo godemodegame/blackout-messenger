@@ -9,9 +9,9 @@ body {
   overflow: hidden;
   color: #070707;
   background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px),
-    linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
-    #047c7c;
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    #0a1f2e;
   background-size: 18px 18px;
   font-family: "MS Sans Serif", "Tahoma", "Geneva", sans-serif;
   letter-spacing: 0;
@@ -50,6 +50,7 @@ textarea {
   box-shadow:
     inset 2px 2px #ffffff,
     inset -2px -2px #77736a;
+  position: relative;
 }
 
 .setup-window {
@@ -87,7 +88,7 @@ textarea {
   align-items: center;
   justify-content: space-between;
   color: #ffffff;
-  background: linear-gradient(90deg, #01017a, #107f9b);
+  background: linear-gradient(90deg, #00243c, #00a8a8);
   border-bottom: 2px solid #1d1d1d;
   padding: 4px 7px;
   font-weight: 700;
@@ -396,7 +397,7 @@ textarea {
 
 .panel-title {
   color: #ffffff;
-  background: #5b247a;
+  background: #00243c;
   border: 1px solid #1d1d1d;
   padding: 5px 7px;
   font-weight: 700;
@@ -422,7 +423,7 @@ textarea {
 
 .retro-input:focus,
 .retro-textarea:focus {
-  border-color: #005de0;
+  border-color: #00d8d8;
 }
 
 .identity-box,
@@ -513,7 +514,7 @@ textarea {
 }
 
 .eyebrow {
-  color: #5b247a;
+  color: #00d8d8;
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -566,7 +567,7 @@ textarea {
   gap: 8px;
   flex-wrap: wrap;
   color: #ffffff;
-  background: #1a5684;
+  background: #00243c;
   border-bottom: 1px solid #1d1d1d;
   padding: 4px 6px;
   font-size: 12px;
@@ -574,7 +575,7 @@ textarea {
 }
 
 .message.mine .message-meta {
-  background: #16704e;
+  background: #004d4d;
 }
 
 .message-body,
@@ -737,7 +738,7 @@ textarea {
 }
 
 .address-readout:focus {
-  border-color: #005de0;
+  border-color: #00d8d8;
 }
 
 .profile-actions {
@@ -1003,4 +1004,40 @@ textarea {
   .sticker-tray {
     grid-template-columns: repeat(6, 52px);
   }
+}
+
+/* Fhenix branding */
+.fhenix-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 10px;
+  z-index: 20;
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+.fhenix-badge a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #00d8d8;
+  text-decoration: none;
+  background: rgba(0, 36, 60, 0.85);
+  border: 1px solid #003a4d;
+  padding: 2px 6px 2px 4px;
+  border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: opacity 0.1s ease;
+}
+
+.fhenix-badge a:hover {
+  opacity: 1;
+  color: #00f0f0;
+}
+
+.fhenix-badge img {
+  height: 12px;
+  width: auto;
+  image-rendering: pixelated;
+  display: block;
 }

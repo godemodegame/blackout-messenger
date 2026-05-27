@@ -331,6 +331,17 @@ export function App() {
             onRequestNotifications={() => void backgroundNotifications.requestPermission()}
           />
         )}
+
+        <div className="fhenix-badge">
+          <a
+            href="https://x.com/fhenix"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Follow Fhenix on X"
+          >
+            <img src="/logo.png" alt="" /> powered by fhenix
+          </a>
+        </div>
       </section>
     </main>
   );
