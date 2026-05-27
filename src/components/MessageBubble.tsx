@@ -27,6 +27,7 @@ export function MessageBubble({
       <div className="message-meta">
         <span>{isMine ? "OUT" : "IN"}</span>
         <span>#{message.id.toString()}</span>
+        {message.isPublic ? <span>public</span> : null}
         {message.payload?.group ? <span>{message.payload.group.name}</span> : null}
         <span>{formatTime(message.sentAt)}</span>
       </div>
@@ -41,7 +42,7 @@ export function MessageBubble({
           ) : null}
           <div className="message-ok">
             <ShieldCheck size={14} />
-            <span>decrypted locally</span>
+            <span>{message.isPublic ? "public plaintext" : "decrypted locally"}</span>
           </div>
         </div>
       ) : (

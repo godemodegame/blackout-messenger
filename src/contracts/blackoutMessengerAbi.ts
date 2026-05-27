@@ -1,6 +1,16 @@
 export const blackoutMessengerAbi = [
   {
     type: "function",
+    name: "sendPublicMessage",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "body", type: "bytes" },
+      { name: "bodyHash", type: "bytes32" },
+    ],
+    outputs: [{ name: "messageId", type: "uint256" }],
+  },
+  {
+    type: "function",
     name: "sendMessage",
     stateMutability: "nonpayable",
     inputs: [
@@ -44,6 +54,18 @@ export const blackoutMessengerAbi = [
       { name: "keyPartB", type: "bytes32", indexed: false },
       { name: "encryptedBody", type: "bytes", indexed: false },
       { name: "iv", type: "bytes12", indexed: false },
+      { name: "bodyHash", type: "bytes32", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "PublicMessageSent",
+    anonymous: false,
+    inputs: [
+      { name: "messageId", type: "uint256", indexed: true },
+      { name: "sender", type: "address", indexed: true },
+      { name: "sentAt", type: "uint64", indexed: false },
+      { name: "body", type: "bytes", indexed: false },
       { name: "bodyHash", type: "bytes32", indexed: false },
     ],
   },

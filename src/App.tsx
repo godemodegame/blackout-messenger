@@ -26,6 +26,7 @@ import {
   MessageSquarePlus,
   Plus,
   QrCode,
+  Radio,
   RefreshCcw,
   Search,
   Send,
@@ -58,6 +59,8 @@ import { CachedMessage, MessagePayload, StickerId } from "./types/messages";
 const MAX_TEXT_LENGTH = 1200;
 const CHAT_REFRESH_INTERVAL_MS = 10_000;
 const AUTO_DECRYPT_RETRY_DELAY_MS = 60_000;
+const PUBLIC_CHAT_ID = "public";
+const PUBLIC_CHAT_NAME = "Everyone";
 const initialParams = new URLSearchParams(window.location.search);
 const initialPeer = readInitialPeer();
 const initialText = (initialParams.get("text") || "").slice(0, MAX_TEXT_LENGTH);
@@ -65,6 +68,12 @@ const initialText = (initialParams.get("text") || "").slice(0, MAX_TEXT_LENGTH);
 type AppScreen = "chats" | "chat" | "profile";
 
 type Conversation =
+  | {
+      kind: "public";
+      count: number;
+      lastMessage?: CachedMessage;
+      lastSentAt: number;
+    }
   | {
       kind: "direct";
       peer: Address;
@@ -100,6 +109,7 @@ export function App() {
   const [screen, setScreen] = useState<AppScreen>(initialPeer ? "chat" : "chats");
   const [selectedPeer, setSelectedPeer] = useState<Address | undefined>(initialPeer);
   const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>();
+  const [isPublicChatSelected, setIsPublicChatSelected] = useState(false);
   const [profilePeer, setProfilePeer] = useState<Address | undefined>(initialPeer);
   const [profileBackScreen, setProfileBackScreen] = useState<AppScreen>(
     initialPeer ? "chat" : "chats",
@@ -133,6 +143,7 @@ export function App() {
       setScreen("chats");
       setSelectedPeer(undefined);
       setSelectedGroupId(undefined);
+      setIsPublicChatSelected(false);
       setProfilePeer(undefined);
       setProfileBackScreen("chats");
       setWalletNotice(null);
@@ -222,7 +233,15 @@ export function App() {
   function openChat(peer: Address) {
     setSelectedPeer(peer);
     setSelectedGroupId(undefined);
+    setIsPublicChatSelected(false);
     setProfilePeer(peer);
+    setScreen("chat");
+  }
+
+  function openPublicChat() {
+    setSelectedPeer(undefined);
+    setSelectedGroupId(undefined);
+    setIsPublicChatSelected(true);
     setScreen("chat");
   }
 
@@ -235,6 +254,7 @@ export function App() {
 
     setSelectedPeer(undefined);
     setSelectedGroupId(group.id);
+    setIsPublicChatSelected(false);
     setScreen("chat");
   }
 
@@ -283,7 +303,7 @@ export function App() {
             onConnectWallet={() => connectWallet()}
             onSwitchNetwork={requestNetworkSwitch}
           />
-        ) : screen === "chat" && (selectedPeer || selectedGroup) ? (
+        ) : screen === "chat" && (selectedPeer || selectedGroup || isPublicChatSelected) ? (
           <ChatScreen
             ready={ready}
             authenticated={authenticated}
@@ -293,6 +313,7 @@ export function App() {
             cofheError={cofheError}
             peer={selectedPeer}
             group={selectedGroup}
+            isPublicChat={isPublicChatSelected}
             onBack={() => setScreen("chats")}
             onOpenProfile={selectedPeer ? () => openProfile(selectedPeer) : undefined}
             onSent={() => void allMailbox.refresh()}
@@ -326,6 +347,7 @@ export function App() {
             onSearchChange={setSearch}
             onStartChat={openChat}
             onStartGroup={saveGroup}
+            onOpenPublic={openPublicChat}
             onOpenGroup={openGroupChat}
             onOpenProfile={openProfile}
             onOpenOwnProfile={() => openProfile(address)}
@@ -505,6 +527,7 @@ function ChatListScreen({
   onSearchChange,
   onStartChat,
   onStartGroup,
+  onOpenPublic,
   onOpenGroup,
   onOpenProfile,
   onOpenOwnProfile,
@@ -527,6 +550,7 @@ function ChatListScreen({
   onSearchChange: (value: string) => void;
   onStartChat: (peer: Address) => void;
   onStartGroup: (group: GroupChat) => void;
+  onOpenPublic: () => void;
   onOpenGroup: (group: GroupChat) => void;
   onOpenProfile: (peer: Address) => void;
   onOpenOwnProfile: () => void;
@@ -645,18 +669,28 @@ function ChatListScreen({
             filteredConversations.map((conversation) => (
               <article
                 className="chat-row"
-                key={conversation.kind === "group" ? conversation.group.id : conversation.peer}
+                key={
+                  conversation.kind === "public"
+                    ? PUBLIC_CHAT_ID
+                    : conversation.kind === "group"
+                      ? conversation.group.id
+                      : conversation.peer
+                }
               >
                 <button
                   className="chat-row-main"
                   type="button"
                   onClick={() =>
-                    conversation.kind === "group"
+                    conversation.kind === "public"
+                      ? onOpenPublic()
+                      : conversation.kind === "group"
                       ? onOpenGroup(conversation.group)
                       : onStartChat(conversation.peer)
                   }
                 >
-                  {conversation.kind === "group" ? (
+                  {conversation.kind === "public" ? (
+                    <Radio size={18} />
+                  ) : conversation.kind === "group" ? (
                     <UsersRound size={18} />
                   ) : (
                     <MessageSquare size={18} />
@@ -666,6 +700,8 @@ function ChatListScreen({
                     <small>
                       {conversation.kind === "group"
                         ? `${conversation.group.members.length + 1} members`
+                        : conversation.kind === "public"
+                          ? "Public chat"
                         : `${conversation.count} messages`}
                     </small>
                   </span>
@@ -744,6 +780,7 @@ function ChatScreen({
   cofheError,
   peer,
   group,
+  isPublicChat = false,
   onBack,
   onOpenProfile,
   onSent,
@@ -758,6 +795,7 @@ function ChatScreen({
   cofheError: string | null;
   peer?: Address;
   group?: GroupChat;
+  isPublicChat?: boolean;
   onBack: () => void;
   onOpenProfile?: () => void;
   onSent: () => void;
@@ -782,8 +820,10 @@ function ChatScreen({
     () =>
       group
         ? mailbox.messages.filter((message) => message.payload?.group?.id === group.id)
+        : isPublicChat
+          ? mailbox.messages.filter((message) => message.isPublic)
         : mailbox.messages,
-    [group, mailbox.messages],
+    [group, isPublicChat, mailbox.messages],
   );
   const sendRecipients = group ? group.members : peer ? [peer] : [];
 
@@ -893,6 +933,7 @@ function ChatScreen({
     authenticated,
     address: account,
     hasRecipients: sendRecipients.length > 0,
+    isPublicChat,
     isConfigured,
     cofheStatus,
     chainId,
@@ -934,11 +975,16 @@ function ChatScreen({
           }
         : payload;
 
-      for (const [index, recipient] of sendRecipients.entries()) {
-        setLocalNotice(
-          group ? `Sending encrypted copy ${index + 1} of ${sendRecipients.length}...` : null,
-        );
-        await mailbox.sendMessage(recipient, groupPayload);
+      if (isPublicChat) {
+        setLocalNotice("Publishing public message...");
+        await mailbox.sendPublicMessage(payload);
+      } else {
+        for (const [index, recipient] of sendRecipients.entries()) {
+          setLocalNotice(
+            group ? `Sending encrypted copy ${index + 1} of ${sendRecipients.length}...` : null,
+          );
+          await mailbox.sendMessage(recipient, groupPayload);
+        }
       }
 
       setText("");
@@ -957,9 +1003,17 @@ function ChatScreen({
           <ArrowLeft size={18} />
         </button>
         <div className="thread-title">
-          <span className="eyebrow">{group ? "Encrypted group" : "Encrypted chat"}</span>
-          <h1>{group ? group.name : peer ? shortAddress(peer) : "Chat"}</h1>
-          {group ? <p>{group.members.length + 1} members</p> : null}
+          <span className="eyebrow">
+            {isPublicChat ? "Public chat" : group ? "Encrypted group" : "Encrypted chat"}
+          </span>
+          <h1>
+            {isPublicChat ? PUBLIC_CHAT_NAME : group ? group.name : peer ? shortAddress(peer) : "Chat"}
+          </h1>
+          {isPublicChat ? (
+            <p>Available to everyone with the app</p>
+          ) : group ? (
+            <p>{group.members.length + 1} members</p>
+          ) : null}
         </div>
         <div className="thread-actions">
           <NotificationButton
@@ -1288,8 +1342,11 @@ function buildConversations(
   const conversationsByPeer = new Map<string, DirectConversation>();
   const groupMessagesById = new Map<string, CachedMessage[]>();
   const groupsById = new Map(groups.map((group) => [group.id, group]));
+  const publicMessages = messages.filter((message) => message.isPublic);
 
   messages.forEach((message) => {
+    if (message.isPublic) return;
+
     if (message.payload?.group?.id) {
       const payloadGroup = message.payload.group;
       const current = groupMessagesById.get(message.payload.group.id) || [];
@@ -1350,15 +1407,29 @@ function buildConversations(
       lastSentAt: lastMessage?.sentAt || Math.floor(group.updatedAt / 1000),
     };
   });
+  const lastPublicMessage = publicMessages.reduce<CachedMessage | undefined>(
+    (latest, message) => (!latest || message.sentAt > latest.sentAt ? message : latest),
+    undefined,
+  );
+  const publicConversation: Conversation = {
+    kind: "public",
+    count: publicMessages.length,
+    lastMessage: lastPublicMessage,
+    lastSentAt: lastPublicMessage?.sentAt || 0,
+  };
 
-  return [...groupConversations, ...directConversations].sort((left, right) => {
+  const sortedConversations = [...groupConversations, ...directConversations].sort((left, right) => {
     if (right.lastSentAt !== left.lastSentAt) return right.lastSentAt - left.lastSentAt;
     return Number((right.lastMessage?.id || 0n) - (left.lastMessage?.id || 0n));
   });
+
+  return [publicConversation, ...sortedConversations];
 }
 
 function conversationLabel(conversation: Conversation) {
-  return conversation.kind === "group"
+  return conversation.kind === "public"
+    ? PUBLIC_CHAT_NAME
+    : conversation.kind === "group"
     ? conversation.group.name
     : shortAddress(conversation.peer);
 }
@@ -1417,6 +1488,7 @@ function getSendBlocker({
   authenticated,
   address,
   hasRecipients,
+  isPublicChat,
   isConfigured,
   cofheStatus,
   chainId,
@@ -1426,6 +1498,7 @@ function getSendBlocker({
   authenticated: boolean;
   address?: Address;
   hasRecipients: boolean;
+  isPublicChat?: boolean;
   isConfigured: boolean;
   cofheStatus: string;
   chainId?: number;
@@ -1435,8 +1508,8 @@ function getSendBlocker({
   if (!authenticated || !address) return "Login first so the app has a sender wallet.";
   if (!isConfigured) return "Contract address is missing in .env.";
   if (chainId !== appChain.id) return `Switch wallet network to ${appChain.name}.`;
-  if (cofheStatus !== "ready") return "Waiting for Fhenix connection.";
-  if (!hasRecipients) return "Add at least one recipient.";
+  if (!isPublicChat && cofheStatus !== "ready") return "Waiting for Fhenix connection.";
+  if (!isPublicChat && !hasRecipients) return "Add at least one recipient.";
   if (!hasPayload) return "Type a message or pick a sticker.";
   return null;
 }

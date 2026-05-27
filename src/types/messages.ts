@@ -58,6 +58,7 @@ export type ChainMessage = {
   bodyHash: Hex;
   txHash: Hex;
   blockNumber: bigint;
+  isPublic?: boolean;
 };
 
 export type CachedMessage = ChainMessage & {

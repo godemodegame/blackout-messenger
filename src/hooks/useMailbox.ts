@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TASK_MANAGER_ADDRESS } from "@cofhe/sdk";
-import { useSendTransaction } from "@privy-io/react-auth";
+import { useActiveWallet, useSendTransaction } from "@privy-io/react-auth";
 import {
   Address,
   Hex,
   PublicClient,
+  WalletClient,
   encodeFunctionData,
   isAddress,
   isAddressEqual,
+  keccak256,
+  stringToHex,
 } from "viem";
 import { usePublicClient, useWalletClient } from "wagmi";
 import { appChain } from "../config/chains";
@@ -33,6 +36,7 @@ type ContractEncryptedInput = {
   signature: `0x${string}`;
 };
 type SendTransaction = ReturnType<typeof useSendTransaction>["sendTransaction"];
+type ActiveWallet = ReturnType<typeof useActiveWallet>["wallet"];
 
 const cofheTaskManagerAbi = [
   {
@@ -60,6 +64,7 @@ const cofheTaskManagerAbi = [
 export function useMailbox(account?: Address, peer?: Address, cofheReady = false) {
   const publicClient = usePublicClient({ chainId: appChain.id });
   const { data: walletClient } = useWalletClient({ chainId: appChain.id });
+  const { wallet: activeWallet } = useActiveWallet();
   const { sendTransaction } = useSendTransaction();
   const [messages, setMessages] = useState<CachedMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -125,6 +130,8 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
           handles: [target.keyPartA, target.keyPartB],
           publicClient,
           sendTransaction,
+          walletClient,
+          activeWallet,
         });
         const [keyPartA, keyPartB] = await Promise.all([
           decryptKeyPartWithRetry(target.keyPartA, permit),
@@ -165,7 +172,15 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
         await saveMessages(account, updated);
       }
     },
-    [account, cofheReady, messages, publicClient, sendTransaction, walletClient?.account.address],
+    [
+      account,
+      activeWallet,
+      cofheReady,
+      messages,
+      publicClient,
+      sendTransaction,
+      walletClient,
+    ],
   );
 
   const sendMessage = useCallback(
@@ -219,6 +234,8 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
             chainId: appChain.id,
           },
           account,
+          walletClient,
+          activeWallet,
         );
 
         setSendState("confirming");
@@ -241,7 +258,61 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
       publicClient,
       refresh,
       sendTransaction,
+      walletClient,
+      activeWallet,
     ],
+  );
+
+  const sendPublicMessage = useCallback(
+    async (payload: MessagePayload) => {
+      if (sendingRef.current) {
+        throw new Error("A send is already preparing. Wait for the wallet prompt.");
+      }
+      if (!account || !publicClient) {
+        throw new Error("Connect before sending.");
+      }
+      if (!env.hasContractAddress) {
+        throw new Error("Set VITE_BLACKOUT_CONTRACT_ADDRESS first.");
+      }
+
+      setSendState("submitting");
+      setError(null);
+      sendingRef.current = true;
+
+      try {
+        const body = stringToHex(JSON.stringify(payload));
+        const data = encodeFunctionData({
+          abi: blackoutMessengerAbi,
+          functionName: "sendPublicMessage",
+          args: [body, keccak256(body)],
+        });
+        const { hash: txHash } = await sendTransactionWithSponsorFallback(
+          sendTransaction,
+          {
+            to: env.contractAddress,
+            data,
+            chainId: appChain.id,
+          },
+          account,
+          walletClient,
+          activeWallet,
+        );
+
+        setSendState("confirming");
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+        setSendState("done");
+        await refresh();
+      } catch (sendError) {
+        setSendState("error");
+        const message =
+          sendError instanceof Error ? formatSendError(sendError.message) : "Send failed.";
+        setError(message);
+        throw new Error(message);
+      } finally {
+        sendingRef.current = false;
+      }
+    },
+    [account, publicClient, refresh, sendTransaction, walletClient, activeWallet],
   );
 
   useEffect(() => {
@@ -256,6 +327,7 @@ export function useMailbox(account?: Address, peer?: Address, cofheReady = false
     refreshCount,
     refresh,
     sendMessage,
+    sendPublicMessage,
     decryptMessage,
   };
 }
@@ -266,12 +338,16 @@ async function ensureDecryptorAllowed({
   handles,
   publicClient,
   sendTransaction,
+  walletClient,
+  activeWallet,
 }: {
   account: Address;
   decryptor: Address;
   handles: [Hex, Hex];
   publicClient: PublicClient;
   sendTransaction: SendTransaction;
+  walletClient?: WalletClient;
+  activeWallet?: ActiveWallet;
 }) {
   if (isAddressEqual(account, decryptor)) return;
 
@@ -298,6 +374,8 @@ async function ensureDecryptorAllowed({
         chainId: appChain.id,
       },
       account,
+      walletClient,
+      activeWallet,
     );
 
     await publicClient.waitForTransactionReceipt({ hash });
@@ -308,7 +386,13 @@ async function sendTransactionWithSponsorFallback(
   sendTransaction: SendTransaction,
   request: Parameters<SendTransaction>[0],
   account: Address,
+  walletClient?: WalletClient,
+  activeWallet?: ActiveWallet,
 ) {
+  if (!isEmbeddedWalletForAccount(activeWallet, account)) {
+    return sendWithConnectedWalletClient(walletClient, request, account);
+  }
+
   try {
     return await sendTransaction(request, {
       address: account,
@@ -324,6 +408,41 @@ async function sendTransactionWithSponsorFallback(
       address: account,
     });
   }
+}
+
+async function sendWithConnectedWalletClient(
+  walletClient: WalletClient | undefined,
+  request: Parameters<SendTransaction>[0],
+  account: Address,
+) {
+  if (!walletClient?.account) {
+    throw new Error("Connected wallet is not ready yet. Reconnect MetaMask and try again.");
+  }
+  if (!isAddressEqual(walletClient.account.address, account)) {
+    throw new Error("Connected wallet does not match the selected account.");
+  }
+  if (!request.to || !isAddress(request.to)) {
+    throw new Error("Transaction target is not a valid address.");
+  }
+
+  const hash = await walletClient.sendTransaction({
+    account: walletClient.account,
+    chain: appChain,
+    to: request.to,
+    data: request.data as Hex | undefined,
+    value: request.value === undefined ? undefined : BigInt(request.value),
+  });
+
+  return { hash };
+}
+
+function isEmbeddedWalletForAccount(activeWallet: ActiveWallet | undefined, account: Address) {
+  return (
+    activeWallet?.type === "ethereum" &&
+    isAddressEqual(activeWallet.address as Address, account) &&
+    (activeWallet.connectorType === "embedded" ||
+      activeWallet.connectorType === "embedded_imported")
+  );
 }
 
 function formatDecryptError(message: string) {

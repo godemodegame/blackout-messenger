@@ -2,6 +2,8 @@ import { openDB, DBSchema } from "idb";
 import { Address } from "viem";
 import { CachedMessage } from "../types/messages";
 
+const PUBLIC_PEER = "0x0000000000000000000000000000000000000000" as Address;
+
 type BlackoutDb = DBSchema & {
   messages: {
     key: string;
@@ -60,6 +62,8 @@ function localKey(account: Address, message: CachedMessage) {
 }
 
 function peerFor(account: Address, message: CachedMessage) {
+  if (message.isPublic) return PUBLIC_PEER;
+
   return (normalizeAddress(message.sender) === normalizeAddress(account)
     ? message.recipient
     : message.sender) as Address;

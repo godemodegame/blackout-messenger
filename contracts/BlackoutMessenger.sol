@@ -20,6 +20,14 @@ contract BlackoutMessenger {
         bytes32 bodyHash
     );
 
+    event PublicMessageSent(
+        uint256 indexed messageId,
+        address indexed sender,
+        uint64 sentAt,
+        bytes body,
+        bytes32 bodyHash
+    );
+
     error InvalidRecipient();
     error EmptyBody();
     error BodyTooLarge();
@@ -59,6 +67,26 @@ contract BlackoutMessenger {
             keyPartB,
             encryptedBody,
             iv,
+            bodyHash
+        );
+    }
+
+    function sendPublicMessage(
+        bytes calldata body,
+        bytes32 bodyHash
+    ) external returns (uint256 messageId) {
+        if (body.length == 0) revert EmptyBody();
+        if (body.length > MAX_BODY_BYTES) revert BodyTooLarge();
+        if (bodyHash == bytes32(0)) revert InvalidBodyHash();
+        if (keccak256(body) != bodyHash) revert InvalidBodyHash();
+
+        messageId = nextMessageId++;
+
+        emit PublicMessageSent(
+            messageId,
+            msg.sender,
+            uint64(block.timestamp),
+            body,
             bodyHash
         );
     }
