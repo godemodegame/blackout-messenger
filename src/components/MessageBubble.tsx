@@ -27,6 +27,7 @@ export function MessageBubble({
       <div className="message-meta">
         <span>{isMine ? "OUT" : "IN"}</span>
         <span>#{message.id.toString()}</span>
+        {message.payload?.group ? <span>{message.payload.group.name}</span> : null}
         <span>{formatTime(message.sentAt)}</span>
       </div>
 

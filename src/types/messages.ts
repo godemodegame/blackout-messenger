@@ -14,25 +14,37 @@ export type StickerId =
   | "thief"
   | "tired";
 
-export type MessagePayload =
-  | {
-      version: 1;
-      type: "text";
-      text: string;
-      stickerId?: never;
-    }
-  | {
-      version: 1;
-      type: "sticker";
-      stickerId: StickerId;
-      text?: never;
-    }
-  | {
-      version: 1;
-      type: "mixed";
-      text: string;
-      stickerId: StickerId;
-    };
+export type GroupPayloadMeta = {
+  id: string;
+  name: string;
+  members: Address[];
+};
+
+type MessagePayloadMeta = {
+  group?: GroupPayloadMeta;
+};
+
+export type MessagePayload = MessagePayloadMeta &
+  (
+    | {
+        version: 1;
+        type: "text";
+        text: string;
+        stickerId?: never;
+      }
+    | {
+        version: 1;
+        type: "sticker";
+        stickerId: StickerId;
+        text?: never;
+      }
+    | {
+        version: 1;
+        type: "mixed";
+        text: string;
+        stickerId: StickerId;
+      }
+  );
 
 export type ChainMessage = {
   id: bigint;

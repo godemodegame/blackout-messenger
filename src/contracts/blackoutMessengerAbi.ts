@@ -32,16 +32,6 @@ export const blackoutMessengerAbi = [
     outputs: [{ name: "messageId", type: "uint256" }],
   },
   {
-    type: "function",
-    name: "getKeyHandles",
-    stateMutability: "view",
-    inputs: [{ name: "messageId", type: "uint256" }],
-    outputs: [
-      { name: "keyPartA", type: "bytes32" },
-      { name: "keyPartB", type: "bytes32" },
-    ],
-  },
-  {
     type: "event",
     name: "MessageSent",
     anonymous: false,

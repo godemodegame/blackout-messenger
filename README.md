@@ -20,7 +20,7 @@ Blackout uses the chain as the mailbox, Fhenix/CoFHE as the confidential key vau
 2. The browser encrypts that payload with a fresh AES-256-GCM key.
 3. The AES key is split into two `uint128` chunks.
 4. The chunks are encrypted through `@cofhe/sdk/web`.
-5. `BlackoutMessenger.sendMessage` stores the encrypted key handles and emits the encrypted body in a `MessageSent` event.
+5. `BlackoutMessenger.sendMessage` grants sender/recipient access to the encrypted key handles and emits the encrypted body in a `MessageSent` event.
 6. The recipient reads events from the chain, decrypts both key chunks with a Fhenix permit, and decrypts the body locally.
 
 The contract never sees message plaintext or AES key plaintext. Observers can still see sender, recipient, timing, and encrypted bytes.

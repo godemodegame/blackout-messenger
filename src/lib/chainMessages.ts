@@ -4,7 +4,6 @@ import {
   PublicClient,
   decodeEventLog,
   getAddress,
-  isAddressEqual,
 } from "viem";
 import { env } from "../config/env";
 import { blackoutMessengerAbi } from "../contracts/blackoutMessengerAbi";
@@ -62,33 +61,45 @@ export async function fetchMailboxMessages(
   if (!env.hasContractAddress) return [];
 
   const latestBlock = await publicClient.getBlockNumber();
-  const [incoming, outgoing] = await Promise.all([
-    getMessageLogs(publicClient, latestBlock, {
-      address: env.contractAddress,
-      event: messageSentAbiItem,
-      args: {
-        recipient: account,
-      },
-    }),
-    getMessageLogs(publicClient, latestBlock, {
-      address: env.contractAddress,
-      event: messageSentAbiItem,
-      args: {
-        sender: account,
-      },
-    }),
-  ]);
+  const [incoming, outgoing] = peer
+    ? await Promise.all([
+        getMessageLogs(publicClient, latestBlock, {
+          address: env.contractAddress,
+          event: messageSentAbiItem,
+          args: {
+            sender: peer,
+            recipient: account,
+          },
+        }),
+        getMessageLogs(publicClient, latestBlock, {
+          address: env.contractAddress,
+          event: messageSentAbiItem,
+          args: {
+            sender: account,
+            recipient: peer,
+          },
+        }),
+      ])
+    : await Promise.all([
+        getMessageLogs(publicClient, latestBlock, {
+          address: env.contractAddress,
+          event: messageSentAbiItem,
+          args: {
+            recipient: account,
+          },
+        }),
+        getMessageLogs(publicClient, latestBlock, {
+          address: env.contractAddress,
+          event: messageSentAbiItem,
+          args: {
+            sender: account,
+          },
+        }),
+      ]);
 
   const messagesById = new Map<string, CachedMessage>();
   [...incoming, ...outgoing]
     .map(decodeMessageLog)
-    .filter((message) => {
-      if (!peer) return true;
-      return (
-        isAddressEqual(message.sender, peer) ||
-        isAddressEqual(message.recipient, peer)
-      );
-    })
     .forEach((message) => {
       messagesById.set(message.id.toString(), message);
     });

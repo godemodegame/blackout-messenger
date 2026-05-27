@@ -506,6 +506,12 @@ textarea {
   white-space: nowrap;
 }
 
+.thread-title p {
+  margin: 3px 0 0;
+  color: #333333;
+  font-size: 12px;
+}
+
 .eyebrow {
   color: #5b247a;
   font-size: 12px;
@@ -866,6 +872,20 @@ textarea {
 
 .qr-actions .retro-button {
   flex: 1 1 180px;
+}
+
+.group-modal {
+  width: min(560px, 100%);
+}
+
+.group-form {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.group-members-input {
+  min-height: 130px;
 }
 
 .qr-upload input {

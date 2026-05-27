@@ -24,12 +24,15 @@ import {
   LogOut,
   MessageSquare,
   MessageSquarePlus,
+  Plus,
   QrCode,
   RefreshCcw,
   Search,
   Send,
   UserRound,
+  UsersRound,
   Wallet,
+  X,
 } from "lucide-react";
 import { StickerPicker } from "./components/StickerPicker";
 import { MessageBubble } from "./components/MessageBubble";
@@ -44,6 +47,12 @@ import {
 } from "./hooks/useBackgroundMessageNotifications";
 import { useCofheConnection } from "./hooks/useCofheConnection";
 import { useMailbox } from "./hooks/useMailbox";
+import {
+  createLocalGroup,
+  getLocalGroups,
+  saveLocalGroups,
+  type GroupChat,
+} from "./lib/localGroups";
 import { CachedMessage, MessagePayload, StickerId } from "./types/messages";
 
 const MAX_TEXT_LENGTH = 1200;
@@ -54,7 +63,23 @@ const initialText = (initialParams.get("text") || "").slice(0, MAX_TEXT_LENGTH);
 
 type AppScreen = "chats" | "chat" | "profile";
 
-type Conversation = {
+type Conversation =
+  | {
+      kind: "direct";
+      peer: Address;
+      count: number;
+      lastMessage: CachedMessage;
+      lastSentAt: number;
+    }
+  | {
+      kind: "group";
+      group: GroupChat;
+      count: number;
+      lastMessage?: CachedMessage;
+      lastSentAt: number;
+    };
+
+type DirectConversation = {
   peer: Address;
   count: number;
   lastMessage: CachedMessage;
@@ -73,11 +98,13 @@ export function App() {
   } = useSwitchChain();
   const [screen, setScreen] = useState<AppScreen>(initialPeer ? "chat" : "chats");
   const [selectedPeer, setSelectedPeer] = useState<Address | undefined>(initialPeer);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>();
   const [profilePeer, setProfilePeer] = useState<Address | undefined>(initialPeer);
   const [profileBackScreen, setProfileBackScreen] = useState<AppScreen>(
     initialPeer ? "chat" : "chats",
   );
   const [search, setSearch] = useState(() => initialPeer || "");
+  const [groups, setGroups] = useState<GroupChat[]>([]);
   const [walletNotice, setWalletNotice] = useState<string | null>(null);
   const wasAuthenticatedRef = useRef(false);
   const autoWalletCreationRef = useRef<string | null>(null);
@@ -104,6 +131,7 @@ export function App() {
     if (wasAuthenticatedRef.current && !authenticated) {
       setScreen("chats");
       setSelectedPeer(undefined);
+      setSelectedGroupId(undefined);
       setProfilePeer(undefined);
       setProfileBackScreen("chats");
       setWalletNotice(null);
@@ -114,6 +142,10 @@ export function App() {
 
   useEffect(() => {
     if (address) setWalletNotice(null);
+  }, [address]);
+
+  useEffect(() => {
+    setGroups(getLocalGroups(address));
   }, [address]);
 
   useEffect(() => {
@@ -144,8 +176,13 @@ export function App() {
   }, [address, allMailbox.refresh, chainId, isDocumentHidden, shouldRefreshAllChats]);
 
   const conversations = useMemo(
-    () => (address ? buildConversations(address, allMailbox.messages) : []),
-    [address, allMailbox.messages],
+    () => (address ? buildConversations(address, allMailbox.messages, groups) : []),
+    [address, allMailbox.messages, groups],
+  );
+
+  const selectedGroup = useMemo(
+    () => groups.find((group) => group.id === selectedGroupId),
+    [groups, selectedGroupId],
   );
 
   function requestNetworkSwitch() {
@@ -183,8 +220,25 @@ export function App() {
 
   function openChat(peer: Address) {
     setSelectedPeer(peer);
+    setSelectedGroupId(undefined);
     setProfilePeer(peer);
     setScreen("chat");
+  }
+
+  function openGroupChat(group: GroupChat) {
+    if (!groups.some((existing) => existing.id === group.id)) {
+      const nextGroups = [group, ...groups];
+      setGroups(nextGroups);
+      if (address) saveLocalGroups(address, nextGroups);
+    }
+
+    setSelectedPeer(undefined);
+    setSelectedGroupId(group.id);
+    setScreen("chat");
+  }
+
+  function saveGroup(group: GroupChat) {
+    openGroupChat(group);
   }
 
   function openProfile(peer: Address) {
@@ -228,7 +282,7 @@ export function App() {
             onConnectWallet={() => connectWallet()}
             onSwitchNetwork={requestNetworkSwitch}
           />
-        ) : screen === "chat" && selectedPeer ? (
+        ) : screen === "chat" && (selectedPeer || selectedGroup) ? (
           <ChatScreen
             ready={ready}
             authenticated={authenticated}
@@ -237,8 +291,9 @@ export function App() {
             cofheStatus={cofheStatus}
             cofheError={cofheError}
             peer={selectedPeer}
+            group={selectedGroup}
             onBack={() => setScreen("chats")}
-            onOpenProfile={() => openProfile(selectedPeer)}
+            onOpenProfile={selectedPeer ? () => openProfile(selectedPeer) : undefined}
             onSent={() => void allMailbox.refresh()}
             notificationPermission={backgroundNotifications.permission}
             onRequestNotifications={() => void backgroundNotifications.requestPermission()}
@@ -269,6 +324,8 @@ export function App() {
             switchNetworkError={switchNetworkError?.message || null}
             onSearchChange={setSearch}
             onStartChat={openChat}
+            onStartGroup={saveGroup}
+            onOpenGroup={openGroupChat}
             onOpenProfile={openProfile}
             onOpenOwnProfile={() => openProfile(address)}
             onRefresh={() => void allMailbox.refresh()}
@@ -446,6 +503,8 @@ function ChatListScreen({
   switchNetworkError,
   onSearchChange,
   onStartChat,
+  onStartGroup,
+  onOpenGroup,
   onOpenProfile,
   onOpenOwnProfile,
   onRefresh,
@@ -466,6 +525,8 @@ function ChatListScreen({
   switchNetworkError: string | null;
   onSearchChange: (value: string) => void;
   onStartChat: (peer: Address) => void;
+  onStartGroup: (group: GroupChat) => void;
+  onOpenGroup: (group: GroupChat) => void;
   onOpenProfile: (peer: Address) => void;
   onOpenOwnProfile: () => void;
   onRefresh: () => void;
@@ -475,14 +536,18 @@ function ChatListScreen({
   onRequestNotifications: () => void;
 }) {
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const trimmedSearch = search.trim();
   const searchAddress = isAddress(trimmedSearch) ? getAddress(trimmedSearch) : undefined;
   const filteredConversations = conversations.filter((conversation) =>
-    conversation.peer.toLowerCase().includes(trimmedSearch.toLowerCase()),
+    conversationLabel(conversation).toLowerCase().includes(trimmedSearch.toLowerCase()),
   );
   const hasConversationForSearch = Boolean(
     searchAddress &&
-      conversations.some((conversation) => isAddressEqual(conversation.peer, searchAddress)),
+      conversations.some(
+        (conversation) =>
+          conversation.kind === "direct" && isAddressEqual(conversation.peer, searchAddress),
+      ),
   );
 
   return (
@@ -494,6 +559,14 @@ function ChatListScreen({
           <p>{email || shortAddress(account)}</p>
         </div>
         <div className="header-actions chats-actions">
+          <button
+            className="icon-button"
+            onClick={() => setGroupDialogOpen(true)}
+            title="Create group chat"
+            aria-label="Create group chat"
+          >
+            <UsersRound size={16} />
+          </button>
           <button
             className="icon-button"
             onClick={onOpenOwnProfile}
@@ -569,27 +642,44 @@ function ChatListScreen({
         <div className="chat-list">
           {filteredConversations.length ? (
             filteredConversations.map((conversation) => (
-              <article className="chat-row" key={conversation.peer}>
+              <article
+                className="chat-row"
+                key={conversation.kind === "group" ? conversation.group.id : conversation.peer}
+              >
                 <button
                   className="chat-row-main"
                   type="button"
-                  onClick={() => onStartChat(conversation.peer)}
+                  onClick={() =>
+                    conversation.kind === "group"
+                      ? onOpenGroup(conversation.group)
+                      : onStartChat(conversation.peer)
+                  }
                 >
-                  <MessageSquare size={18} />
+                  {conversation.kind === "group" ? (
+                    <UsersRound size={18} />
+                  ) : (
+                    <MessageSquare size={18} />
+                  )}
                   <span>
-                    <strong>{shortAddress(conversation.peer)}</strong>
-                    <small>{conversation.count} messages</small>
+                    <strong>{conversationLabel(conversation)}</strong>
+                    <small>
+                      {conversation.kind === "group"
+                        ? `${conversation.group.members.length + 1} members`
+                        : `${conversation.count} messages`}
+                    </small>
                   </span>
                   <time>{formatTime(conversation.lastSentAt)}</time>
                 </button>
-                <button
-                  className="icon-button"
-                  type="button"
-                  onClick={() => onOpenProfile(conversation.peer)}
-                  title="Open profile"
-                >
-                  <UserRound size={17} />
-                </button>
+                {conversation.kind === "direct" ? (
+                  <button
+                    className="icon-button"
+                    type="button"
+                    onClick={() => onOpenProfile(conversation.peer)}
+                    title="Open profile"
+                  >
+                    <UserRound size={17} />
+                  </button>
+                ) : null}
               </article>
             ))
           ) : (
@@ -611,6 +701,10 @@ function ChatListScreen({
         ) : !conversations.length ? (
           <div className="start-chat-strip">
             <span>Paste a recipient address into search to start a conversation.</span>
+            <button className="send-button" type="button" onClick={() => setGroupDialogOpen(true)}>
+              <Plus size={17} />
+              New group
+            </button>
           </div>
         ) : null}
       </section>
@@ -626,6 +720,16 @@ function ChatListScreen({
           }}
         />
       ) : null}
+      {groupDialogOpen ? (
+        <GroupDialog
+          account={account}
+          onClose={() => setGroupDialogOpen(false)}
+          onCreate={(group) => {
+            setGroupDialogOpen(false);
+            onStartGroup(group);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -638,6 +742,7 @@ function ChatScreen({
   cofheStatus,
   cofheError,
   peer,
+  group,
   onBack,
   onOpenProfile,
   onSent,
@@ -650,9 +755,10 @@ function ChatScreen({
   chainId?: number;
   cofheStatus: string;
   cofheError: string | null;
-  peer: Address;
+  peer?: Address;
+  group?: GroupChat;
   onBack: () => void;
-  onOpenProfile: () => void;
+  onOpenProfile?: () => void;
   onSent: () => void;
   notificationPermission: BackgroundNotificationPermission;
   onRequestNotifications: () => void;
@@ -664,12 +770,24 @@ function ChatScreen({
   const autoRefreshInFlightRef = useRef(false);
   const decryptingRef = useRef(new Set<string>());
   const attemptedDecryptRef = useRef(new Set<string>());
-  const mailbox = useMailbox(account, peer, cofheStatus === "ready" && chainId === appChain.id);
+  const mailbox = useMailbox(
+    account,
+    group ? undefined : peer,
+    cofheStatus === "ready" && chainId === appChain.id,
+  );
+  const visibleMessages = useMemo(
+    () =>
+      group
+        ? mailbox.messages.filter((message) => message.payload?.group?.id === group.id)
+        : mailbox.messages,
+    [group, mailbox.messages],
+  );
+  const sendRecipients = group ? group.members : peer ? [peer] : [];
 
   useEffect(() => {
     if (chainId !== appChain.id || !isConfigured) return;
     void mailbox.refresh();
-  }, [chainId, mailbox.refresh, peer]);
+  }, [chainId, group?.id, mailbox.refresh, peer]);
 
   useEffect(() => {
     if (chainId !== appChain.id || !isConfigured) return;
@@ -689,7 +807,7 @@ function ChatScreen({
     }, CHAT_REFRESH_INTERVAL_MS);
 
     return () => window.clearInterval(intervalId);
-  }, [chainId, mailbox.refresh, peer]);
+  }, [chainId, group?.id, mailbox.refresh, peer]);
 
   useEffect(() => {
     if (cofheStatus !== "ready") return;
@@ -724,7 +842,7 @@ function ChatScreen({
     ready,
     authenticated,
     address: account,
-    normalizedPeer: peer,
+    hasRecipients: sendRecipients.length > 0,
     isConfigured,
     cofheStatus,
     chainId,
@@ -755,7 +873,24 @@ function ChatScreen({
         };
 
     try {
-      await mailbox.sendMessage(peer, payload);
+      const groupPayload = group
+        ? {
+            ...payload,
+            group: {
+              id: group.id,
+              name: group.name,
+              members: [account, ...group.members],
+            },
+          }
+        : payload;
+
+      for (const [index, recipient] of sendRecipients.entries()) {
+        setLocalNotice(
+          group ? `Sending encrypted copy ${index + 1} of ${sendRecipients.length}...` : null,
+        );
+        await mailbox.sendMessage(recipient, groupPayload);
+      }
+
       setText("");
       setSelectedSticker(undefined);
       setLocalNotice(null);
@@ -772,24 +907,27 @@ function ChatScreen({
           <ArrowLeft size={18} />
         </button>
         <div className="thread-title">
-          <span className="eyebrow">Encrypted chat</span>
-          <h1>{shortAddress(peer)}</h1>
+          <span className="eyebrow">{group ? "Encrypted group" : "Encrypted chat"}</span>
+          <h1>{group ? group.name : peer ? shortAddress(peer) : "Chat"}</h1>
+          {group ? <p>{group.members.length + 1} members</p> : null}
         </div>
         <div className="thread-actions">
           <NotificationButton
             permission={notificationPermission}
             onRequestPermission={onRequestNotifications}
           />
-          <button className="retro-button" type="button" onClick={onOpenProfile}>
-            <UserRound size={16} />
-            Profile
-          </button>
+          {onOpenProfile ? (
+            <button className="retro-button" type="button" onClick={onOpenProfile}>
+              <UserRound size={16} />
+              Profile
+            </button>
+          ) : null}
         </div>
       </header>
 
       <div className="message-list" aria-live="polite">
-        {mailbox.messages.length ? (
-          mailbox.messages.map((message) => (
+        {visibleMessages.length ? (
+          visibleMessages.map((message) => (
             <MessageBubble
               key={message.id.toString()}
               message={message}
@@ -839,6 +977,124 @@ function ChatScreen({
       </div>
     </div>
   );
+}
+
+function GroupDialog({
+  account,
+  onClose,
+  onCreate,
+}: {
+  account: Address;
+  onClose: () => void;
+  onCreate: (group: GroupChat) => void;
+}) {
+  const [name, setName] = useState("");
+  const [membersText, setMembersText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const members = parseAddressList(membersText);
+  const canCreate = Boolean(name.trim() && members.length);
+
+  function handleCreate() {
+    const invalidTokens = membersText
+      .split(/[\s,;]+/)
+      .map((token) => token.trim())
+      .filter((token) => token && !isAddress(token));
+
+    if (invalidTokens.length) {
+      setError(`Invalid address: ${invalidTokens[0]}`);
+      return;
+    }
+
+    if (!canCreate) {
+      setError("Add a group name and at least one member address.");
+      return;
+    }
+
+    const group = createLocalGroup(account, name, members);
+    if (!group.members.length) {
+      setError("Add at least one member other than yourself.");
+      return;
+    }
+
+    onCreate(group);
+  }
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Create group chat">
+      <section className="qr-modal group-modal">
+        <header className="modal-header">
+          <div>
+            <span className="eyebrow">Group chat</span>
+            <h2>New group</h2>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Close">
+            <X size={17} />
+          </button>
+        </header>
+        <div className="group-form">
+          <label className="field-label" htmlFor="group-name">
+            Name
+          </label>
+          <input
+            id="group-name"
+            className="retro-input"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Weekend crew"
+            maxLength={48}
+          />
+          <label className="field-label" htmlFor="group-members">
+            Member addresses
+          </label>
+          <textarea
+            id="group-members"
+            className="retro-textarea group-members-input"
+            value={membersText}
+            onChange={(event) => {
+              setMembersText(event.target.value);
+              setError(null);
+            }}
+            placeholder="Paste 0x addresses, one per line"
+            spellCheck={false}
+          />
+          <div className="identity-box">
+            <strong>{members.length} valid members</strong>
+            <div>You will stay in the group automatically.</div>
+          </div>
+          {error ? <p className="error-text">{error}</p> : null}
+        </div>
+        <div className="qr-actions">
+          <button className="retro-button" type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="send-button" type="button" onClick={handleCreate} disabled={!canCreate}>
+            <UsersRound size={17} />
+            Create group
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function parseAddressList(value: string) {
+  const addresses: Address[] = [];
+
+  value
+    .split(/[\s,;]+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .forEach((token) => {
+      if (!isAddress(token)) return;
+
+      const address = getAddress(token);
+      if (!addresses.some((existing) => isAddressEqual(existing, address))) {
+        addresses.push(address);
+      }
+    });
+
+  return addresses;
 }
 
 function ProfileScreen({
@@ -970,10 +1226,34 @@ async function copyText(value: string) {
   }
 }
 
-function buildConversations(account: Address, messages: CachedMessage[]): Conversation[] {
-  const conversationsByPeer = new Map<string, Conversation>();
+function buildConversations(
+  account: Address,
+  messages: CachedMessage[],
+  groups: GroupChat[],
+): Conversation[] {
+  const conversationsByPeer = new Map<string, DirectConversation>();
+  const groupMessagesById = new Map<string, CachedMessage[]>();
+  const groupsById = new Map(groups.map((group) => [group.id, group]));
 
   messages.forEach((message) => {
+    if (message.payload?.group?.id) {
+      const payloadGroup = message.payload.group;
+      const current = groupMessagesById.get(message.payload.group.id) || [];
+      current.push(message);
+      groupMessagesById.set(message.payload.group.id, current);
+
+      if (!groupsById.has(payloadGroup.id)) {
+        groupsById.set(payloadGroup.id, {
+          id: payloadGroup.id,
+          name: payloadGroup.name,
+          members: payloadGroup.members.filter((member) => !isAddressEqual(member, account)),
+          createdAt: message.sentAt * 1000,
+          updatedAt: message.sentAt * 1000,
+        });
+      }
+      return;
+    }
+
     const peer = isAddressEqual(message.sender, account) ? message.recipient : message.sender;
     const key = peer.toLowerCase();
     const existing = conversationsByPeer.get(key);
@@ -995,10 +1275,38 @@ function buildConversations(account: Address, messages: CachedMessage[]): Conver
     }
   });
 
-  return [...conversationsByPeer.values()].sort((left, right) => {
-    if (right.lastSentAt !== left.lastSentAt) return right.lastSentAt - left.lastSentAt;
-    return Number(right.lastMessage.id - left.lastMessage.id);
+  const directConversations: Conversation[] = [...conversationsByPeer.values()].map(
+    (conversation) => ({
+      kind: "direct",
+      ...conversation,
+    }),
+  );
+  const groupConversations: Conversation[] = [...groupsById.values()].map((group) => {
+    const groupMessages = groupMessagesById.get(group.id) || [];
+    const lastMessage = groupMessages.reduce<CachedMessage | undefined>(
+      (latest, message) => (!latest || message.sentAt > latest.sentAt ? message : latest),
+      undefined,
+    );
+
+    return {
+      kind: "group",
+      group,
+      count: groupMessages.length,
+      lastMessage,
+      lastSentAt: lastMessage?.sentAt || Math.floor(group.updatedAt / 1000),
+    };
   });
+
+  return [...groupConversations, ...directConversations].sort((left, right) => {
+    if (right.lastSentAt !== left.lastSentAt) return right.lastSentAt - left.lastSentAt;
+    return Number((right.lastMessage?.id || 0n) - (left.lastMessage?.id || 0n));
+  });
+}
+
+function conversationLabel(conversation: Conversation) {
+  return conversation.kind === "group"
+    ? conversation.group.name
+    : shortAddress(conversation.peer);
 }
 
 function readInitialPeer() {
@@ -1054,7 +1362,7 @@ function getSendBlocker({
   ready,
   authenticated,
   address,
-  normalizedPeer,
+  hasRecipients,
   isConfigured,
   cofheStatus,
   chainId,
@@ -1063,7 +1371,7 @@ function getSendBlocker({
   ready: boolean;
   authenticated: boolean;
   address?: Address;
-  normalizedPeer?: Address;
+  hasRecipients: boolean;
   isConfigured: boolean;
   cofheStatus: string;
   chainId?: number;
@@ -1074,7 +1382,7 @@ function getSendBlocker({
   if (!isConfigured) return "Contract address is missing in .env.";
   if (chainId !== appChain.id) return `Switch wallet network to ${appChain.name}.`;
   if (cofheStatus !== "ready") return "Waiting for Fhenix connection.";
-  if (!normalizedPeer) return "Paste a valid recipient wallet address.";
+  if (!hasRecipients) return "Add at least one recipient.";
   if (!hasPayload) return "Type a message or pick a sticker.";
   return null;
 }

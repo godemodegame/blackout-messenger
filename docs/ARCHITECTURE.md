@@ -9,7 +9,7 @@ Blackout is testnet-first and backendless. There is no app server, no private da
 | Browser | Payload JSON, AES-GCM encryption/decryption, local IndexedDB cache |
 | Privy | Email/social/wallet login, embedded EVM wallet creation for users without wallets |
 | Fhenix CoFHE | Encrypt AES key chunks, manage permits, enforce recipient access to ciphertext handles |
-| Smart contract | Store key handles, grant sender/recipient access, emit encrypted message bodies |
+| Smart contract | Grant sender/recipient access to key handles, emit encrypted message bodies |
 | Testnet logs | Async mailbox and delivery history |
 
 ## Send Flow

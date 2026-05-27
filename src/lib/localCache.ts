@@ -17,24 +17,56 @@ type BlackoutDb = DBSchema & {
   };
 };
 
-const dbPromise = openDB<BlackoutDb>("blackout-messenger", 1, {
-  upgrade(db) {
-    const messageStore = db.createObjectStore("messages", {
-      keyPath: "localKey",
-    });
-    messageStore.createIndex("by-account-peer", ["account", "peer"]);
-    messageStore.createIndex("by-account", "account");
+const dbPromise = openDB<BlackoutDb>("blackout-messenger", 2, {
+  async upgrade(db, oldVersion, _newVersion, tx) {
+    const messageStore =
+      oldVersion < 1
+        ? db.createObjectStore("messages", {
+            keyPath: "localKey",
+          })
+        : tx.objectStore("messages");
+
+    if (oldVersion < 1) {
+      messageStore.createIndex("by-account-peer", ["account", "peer"]);
+      messageStore.createIndex("by-account", "account");
+    }
+
+    if (oldVersion < 2) {
+      const records = await messageStore.getAll();
+      await Promise.all(
+        records.map((record) => {
+          const normalizedAccount = normalizeAddress(record.account);
+          const normalizedPeer = normalizeAddress(record.peer);
+          const normalizedLocalKey = `${normalizedAccount}:${record.id.toString()}`;
+
+          const putRecord = messageStore.put({
+            ...record,
+            localKey: normalizedLocalKey,
+            account: normalizedAccount,
+            peer: normalizedPeer,
+          });
+
+          return record.localKey === normalizedLocalKey
+            ? putRecord
+            : Promise.all([messageStore.delete(record.localKey), putRecord]);
+        }),
+      );
+    }
   },
 });
 
 function localKey(account: Address, message: CachedMessage) {
-  return `${account.toLowerCase()}:${message.id.toString()}`;
+  return `${normalizeAddress(account)}:${message.id.toString()}`;
 }
 
 function peerFor(account: Address, message: CachedMessage) {
-  return (message.sender.toLowerCase() === account.toLowerCase()
+  return (normalizeAddress(message.sender) === normalizeAddress(account)
     ? message.recipient
     : message.sender) as Address;
+}
+
+function normalizeAddress(address: Address) {
+  return address.toLowerCase() as Address;
 }
 
 export async function saveMessages(account: Address, messages: CachedMessage[]) {
@@ -46,8 +78,8 @@ export async function saveMessages(account: Address, messages: CachedMessage[]) 
       tx.store.put({
         ...message,
         localKey: localKey(account, message),
-        account,
-        peer: peerFor(account, message),
+        account: normalizeAddress(account),
+        peer: normalizeAddress(peerFor(account, message)),
       }),
     ),
   );
@@ -56,19 +88,15 @@ export async function saveMessages(account: Address, messages: CachedMessage[]) 
 
 export async function getCachedMessages(account: Address, peer?: Address) {
   const db = await dbPromise;
+  const normalizedAccount = normalizeAddress(account);
   const records = peer
-    ? await db.getAllFromIndex("messages", "by-account-peer", [account, peer])
-    : await db.getAllFromIndex("messages", "by-account", account);
+    ? await db.getAllFromIndex("messages", "by-account-peer", [
+        normalizedAccount,
+        normalizeAddress(peer),
+      ])
+    : await db.getAllFromIndex("messages", "by-account", normalizedAccount);
 
   return records
     .map(({ localKey: _localKey, account: _account, peer: _peer, ...message }) => message)
     .sort((left, right) => Number(left.id - right.id));
-}
-
-export async function clearCachedMessages(account: Address) {
-  const db = await dbPromise;
-  const tx = db.transaction("messages", "readwrite");
-  const keys = await tx.store.index("by-account").getAllKeys(account);
-  await Promise.all(keys.map((key) => tx.store.delete(key)));
-  await tx.done;
 }
