@@ -1217,6 +1217,16 @@ textarea {
     padding: 8px;
   }
 
+  /* Hide network switch UI on mobile — wallets handle their own chain switching prompts.
+     Keep the info (required network, session) visible in auth, but remove the button.
+     The .network-box alert in chat list is fully suppressed to reduce clutter on phones. */
+  .network-box {
+    display: none !important;
+  }
+  .network-panel button {
+    display: none;
+  }
+
   .screen-header,
   .thread-header {
     padding: 6px 8px;
