@@ -467,6 +467,57 @@ textarea {
   font-size: 12px;
 }
 
+/* Retro missed-messages banner (mobile + desktop resume notifications) */
+.missed-banner {
+  margin: 0 10px 8px;
+  border: 2px solid #1d1d1d;
+  background: #fff1a8;
+  box-shadow:
+    inset 2px 2px #ffffff,
+    inset -2px -2px #77736a;
+  padding: 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.missed-banner-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  color: #222;
+}
+
+.missed-banner-body {
+  font-size: 13px;
+  color: #333;
+  padding-left: 2px;
+}
+
+.missed-banner-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.missed-banner-actions .retro-button {
+  flex: 1;
+  min-height: 32px;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+@media (max-width: 640px) {
+  .missed-banner {
+    margin: 0 6px 6px;
+    padding: 6px 8px;
+  }
+  .missed-banner-actions .retro-button {
+    min-height: 38px;
+  }
+}
+
 .chat-screen {
   min-height: 0;
 }
@@ -1219,7 +1270,9 @@ textarea {
 
   /* Hide network switch UI on mobile — wallets handle their own chain switching prompts.
      Keep the info (required network, session) visible in auth, but remove the button.
-     The .network-box alert in chat list is fully suppressed to reduce clutter on phones. */
+     The .network-box alert in chat list is fully suppressed to reduce clutter on phones.
+     The missed-messages banner (.missed-banner) is intentionally left visible — it is the
+     primary "you have new encrypted messages" surface for PWA resume on mobile. */
   .network-box {
     display: none !important;
   }

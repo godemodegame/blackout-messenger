@@ -127,6 +127,7 @@ export function App() {
     onOpenPeer: openChat,
     refreshCount: allMailbox.refreshCount,
   });
+  const { permission: notificationPermission, requestPermission: requestNotifications, missedMessages: missedIncoming, markAsSeen } = backgroundNotifications;
   const shouldRefreshAllChats = screen === "chats" || isDocumentHidden;
 
   useEffect(() => {
@@ -221,6 +222,7 @@ export function App() {
   ]);
 
   function openChat(peer: Address) {
+    markAsSeen?.();
     setSelectedPeer(peer);
     setSelectedGroupId(undefined);
     setProfilePeer(peer);
@@ -228,6 +230,7 @@ export function App() {
   }
 
   function openGroupChat(group: GroupChat) {
+    markAsSeen?.();
     if (!groups.some((existing) => existing.id === group.id)) {
       const nextGroups = [group, ...groups];
       setGroups(nextGroups);
@@ -307,8 +310,8 @@ export function App() {
             }}
             onOpenProfile={selectedPeer ? () => openProfile(selectedPeer) : undefined}
             onSent={() => void allMailbox.refresh()}
-            notificationPermission={backgroundNotifications.permission}
-            onRequestNotifications={() => void backgroundNotifications.requestPermission()}
+            notificationPermission={notificationPermission}
+            onRequestNotifications={() => void requestNotifications()}
           />
         ) : screen === "profile" && profilePeer ? (
           <ProfileScreen
@@ -348,8 +351,10 @@ export function App() {
             onRefresh={() => void allMailbox.refresh()}
             onLogout={() => void logout()}
             onSwitchNetwork={requestNetworkSwitch}
-            notificationPermission={backgroundNotifications.permission}
-            onRequestNotifications={() => void backgroundNotifications.requestPermission()}
+            notificationPermission={notificationPermission}
+            onRequestNotifications={() => void requestNotifications()}
+            missedIncoming={missedIncoming}
+            onMarkAllAsSeen={markAsSeen}
           />
         )}
 
@@ -508,6 +513,43 @@ function NotificationButton({
   );
 }
 
+function MissedMessagesBanner({
+  messages,
+  onDismiss,
+  onOpenLatest,
+}: {
+  messages: CachedMessage[];
+  onDismiss: () => void;
+  onOpenLatest: () => void;
+}) {
+  const count = messages.length;
+  const latest = messages[messages.length - 1];
+  const uniqueSenders = Array.from(new Set(messages.map((m) => m.sender.toLowerCase()))).length;
+
+  return (
+    <div className="missed-banner" role="alert">
+      <div className="missed-banner-title">
+        <AlertTriangle size={15} />
+        <span>
+          {count} NEW ENCRYPTED MESSAGE{count === 1 ? "" : "S"} WHILE YOU WERE AWAY
+        </span>
+      </div>
+      <div className="missed-banner-body">
+        Latest from {latest.sender.slice(0, 6)}...{latest.sender.slice(-4)}
+        {uniqueSenders > 1 ? ` (+${uniqueSenders - 1} other${uniqueSenders > 2 ? "s" : ""})` : ""}
+      </div>
+      <div className="missed-banner-actions">
+        <button className="retro-button" type="button" onClick={onOpenLatest}>
+          OPEN LATEST
+        </button>
+        <button className="retro-button" type="button" onClick={onDismiss}>
+          MARK READ
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ChatListScreen({
   account,
   chainId,
@@ -550,6 +592,8 @@ function ChatListScreen({
   onSwitchNetwork: () => void;
   notificationPermission: BackgroundNotificationPermission;
   onRequestNotifications: () => void;
+  missedIncoming?: CachedMessage[];
+  onMarkAllAsSeen?: () => void;
 }) {
   const [scannerOpen, setScannerOpen] = useState(false);
   const trimmedSearch = search.trim();
@@ -623,6 +667,18 @@ function ChatListScreen({
           </button>
           {switchNetworkError ? <span className="error-text">{switchNetworkError}</span> : null}
         </div>
+      ) : null}
+
+      {missedIncoming && missedIncoming.length > 0 && onMarkAllAsSeen ? (
+        <MissedMessagesBanner
+          messages={missedIncoming}
+          onDismiss={onMarkAllAsSeen}
+          onOpenLatest={() => {
+            const latest = missedIncoming[missedIncoming.length - 1];
+            if (latest) onStartChat(latest.sender);
+            onMarkAllAsSeen();
+          }}
+        />
       ) : null}
 
       <section className="chat-list-shell">
