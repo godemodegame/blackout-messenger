@@ -279,7 +279,7 @@ export function App() {
             onConnectWallet={() => connectWallet()}
             onSwitchNetwork={requestNetworkSwitch}
           />
-        ) : (selectedPeer || selectedGroup) ? (
+        ) : (screen === "chat" && (selectedPeer || selectedGroup)) ? (
           <ChatScreen
             ready={ready}
             authenticated={authenticated}
@@ -289,7 +289,11 @@ export function App() {
             cofheError={cofheError}
             peer={selectedPeer}
             group={selectedGroup}
-            onBack={() => setScreen("chats")}
+            onBack={() => {
+              setSelectedPeer(undefined);
+              setSelectedGroupId(undefined);
+              setScreen("chats");
+            }}
             onOpenProfile={selectedPeer ? () => openProfile(selectedPeer) : undefined}
             onSent={() => void allMailbox.refresh()}
             notificationPermission={backgroundNotifications.permission}
@@ -300,9 +304,15 @@ export function App() {
             account={address}
             peer={profilePeer}
             messages={allMailbox.messages}
-            onBack={() =>
-              setScreen(profileBackScreen === "chat" && selectedPeer ? "chat" : "chats")
-            }
+            onBack={() => {
+              if (profileBackScreen === "chat" && selectedPeer) {
+                setScreen("chat");
+              } else {
+                setSelectedPeer(undefined);
+                setSelectedGroupId(undefined);
+                setScreen("chats");
+              }
+            }}
             onOpenChat={
               isAddressEqual(address, profilePeer) ? undefined : () => openChat(profilePeer)
             }
