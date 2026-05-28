@@ -245,18 +245,13 @@ export function useMailbox(
             encryptedPayload.bodyHash,
           ],
         });
-        // Gas hack for public messages:
-        // sendPublicMessage takes a variable-length `bytes body` (the full JSON payload).
-        // On Base, long calldata (especially stickers + text) can exceed Privy's default
-        // sponsored gas estimation → "intrinsic gas too low".
-        // We force a high limit here. 400k is very safe for this contract.
+
         const { hash: txHash } = await sendTransactionWithSponsorFallback(
           sendTransaction,
           {
             to: env.contractAddress,
             data,
             chainId: appChain.id,
-            gas: "400000",
           },
           account,
           walletClient,
@@ -311,6 +306,12 @@ export function useMailbox(
           functionName: "sendPublicMessage",
           args: [body, keccak256(body)],
         });
+
+        // Gas hack for the public Lobby:
+        // sendPublicMessage takes a variable-length `bytes body` (the full JSON payload).
+        // On Base, long calldata (especially stickers + text) can exceed Privy's default
+        // sponsored gas estimation → "intrinsic gas too low".
+        // We force a high limit here. 400k is very safe for this contract.
         const { hash: txHash } = await sendTransactionWithSponsorFallback(
           sendTransaction,
           {
@@ -321,6 +322,7 @@ export function useMailbox(
           account,
           walletClient,
           activeWallet,
+          "400000",
         );
 
         setSendState("confirming");
@@ -413,13 +415,19 @@ async function sendTransactionWithSponsorFallback(
   account: Address,
   walletClient?: WalletClient,
   activeWallet?: ActiveWallet,
+  gas?: string | bigint,
 ) {
   if (!isEmbeddedWalletForAccount(activeWallet, account)) {
-    return sendWithConnectedWalletClient(walletClient, request, account);
+    return sendWithConnectedWalletClient(walletClient, request, account, gas);
   }
 
+  // Apply explicit gas override when provided (used for public Lobby messages)
+  const sponsorRequest = gas
+    ? ({ ...request, gas: BigInt(gas) } as any)
+    : request;
+
   try {
-    return await sendTransaction(request, {
+    return await sendTransaction(sponsorRequest, {
       address: account,
       sponsor: true,
     });
@@ -429,7 +437,7 @@ async function sendTransactionWithSponsorFallback(
       throw error;
     }
 
-    return sendTransaction(request, {
+    return sendTransaction(sponsorRequest, {
       address: account,
     });
   }
@@ -439,6 +447,7 @@ async function sendWithConnectedWalletClient(
   walletClient: WalletClient | undefined,
   request: Parameters<SendTransaction>[0],
   account: Address,
+  gas?: string | bigint,
 ) {
   if (!walletClient?.account) {
     throw new Error("Connected wallet is not ready yet. Reconnect MetaMask and try again.");
@@ -450,14 +459,20 @@ async function sendWithConnectedWalletClient(
     throw new Error("Transaction target is not a valid address.");
   }
 
-  const hash = await walletClient.sendTransaction({
+  const txParams: any = {
     account: walletClient.account,
     chain: appChain,
     to: request.to,
     data: request.data as Hex | undefined,
     value: request.value === undefined ? undefined : BigInt(request.value),
-    gas: request.gas !== undefined ? BigInt(request.gas) : undefined,
-  });
+  };
+
+  const effectiveGas = gas ?? (request as any).gas;
+  if (effectiveGas !== undefined) {
+    txParams.gas = BigInt(effectiveGas);
+  }
+
+  const hash = await walletClient.sendTransaction(txParams);
 
   return { hash };
 }
