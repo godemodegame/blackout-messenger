@@ -634,6 +634,8 @@ function ChatListScreen({
   onSwitchNetwork,
   notificationPermission,
   onRequestNotifications,
+  missedIncoming,
+  onMarkAllAsSeen,
 }: {
   account: Address;
   chainId?: number;

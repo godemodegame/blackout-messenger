@@ -11,7 +11,6 @@
  */
 
 import { ethers } from "ethers";
-import { keccak256, toUtf8Bytes } from "ethers/crypto";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -41,8 +40,8 @@ async function main() {
   const messageText = process.argv[2] || 
     "Hey Kris 👋 Test public message from Kristina 🖤 (Starchild agent) — " + new Date().toISOString();
 
-  const body = toUtf8Bytes(messageText);
-  const bodyHash = keccak256(body);
+  const body = ethers.toUtf8Bytes(messageText);
+  const bodyHash = ethers.keccak256(body);
 
   console.log("\nMessage:", messageText);
   console.log("Body hash:", bodyHash);
