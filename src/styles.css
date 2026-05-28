@@ -1069,3 +1069,60 @@ textarea {
   vertical-align: middle;
   display: inline-block;
 }
+
+/* === Sticker button + popup (Telegram-style) === */
+
+.compose {
+  position: relative;
+  border-top: 2px solid #77736a;
+  padding: 10px;
+  background: #d8d4ca;
+}
+
+.compose-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.compose-input-row .retro-textarea {
+  flex: 1;
+  min-height: 52px;
+  resize: none;
+}
+
+.sticker-trigger {
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+
+.sticker-popup {
+  position: absolute;
+  bottom: 100%;
+  left: 8px;
+  right: 8px;
+  background: #d8d4ca;
+  border: 2px solid #1d1d1d;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+  z-index: 60;
+  padding: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.sticker-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #77736a;
+}
+
+.sticker-popup-header .icon-button {
+  width: 24px;
+  height: 24px;
+}

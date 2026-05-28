@@ -28,6 +28,7 @@ import {
   RefreshCcw,
   Search,
   Send,
+  Smile,
   UserRound,
   UsersRound,
   Wallet,
@@ -757,6 +758,7 @@ function ChatScreen({
 }) {
   const [text, setText] = useState(initialText);
   const [selectedSticker, setSelectedSticker] = useState<StickerId>();
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [localNotice, setLocalNotice] = useState<string | null>(null);
   const [decryptingIds, setDecryptingIds] = useState<Set<string>>(() => new Set());
   const [decryptRetryTick, setDecryptRetryTick] = useState(0);
@@ -1000,20 +1002,51 @@ function ChatScreen({
           void handleSend();
         }}
       >
-        <StickerPicker selected={selectedSticker} onSelect={setSelectedSticker} />
-        <textarea
-          className="retro-textarea"
-          value={text}
-          onChange={(event) => setText(event.target.value.slice(0, MAX_TEXT_LENGTH))}
-          placeholder="Message..."
-        />
-        <div className="compose-actions">
-          <span>{MAX_TEXT_LENGTH - text.length} chars</span>
+        <div className="compose-input-row">
+          <button
+            type="button"
+            className={`icon-button sticker-trigger ${selectedSticker ? "success" : ""}`}
+            onClick={() => setShowStickerPicker(!showStickerPicker)}
+            title={selectedSticker ? "Change or remove sticker" : "Add a sticker"}
+          >
+            <Smile size={18} />
+          </button>
+
+          <textarea
+            className="retro-textarea"
+            value={text}
+            onChange={(event) => setText(event.target.value.slice(0, MAX_TEXT_LENGTH))}
+            placeholder="Message..."
+          />
+
           <button className="send-button" type="submit" disabled={!canSend}>
             <Send size={17} />
             Send
           </button>
         </div>
+
+        {showStickerPicker && (
+          <div className="sticker-popup">
+            <div className="sticker-popup-header">
+              <span>Choose sticker</span>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setShowStickerPicker(false)}
+                title="Close stickers"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <StickerPicker
+              selected={selectedSticker}
+              onSelect={(id) => {
+                setSelectedSticker(id);
+                setShowStickerPicker(false);
+              }}
+            />
+          </div>
+        )}
       </form>
 
       <div className="notice-strip">
