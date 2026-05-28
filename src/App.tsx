@@ -48,6 +48,7 @@ import {
 } from "./hooks/useBackgroundMessageNotifications";
 import { useCofheConnection } from "./hooks/useCofheConnection";
 import { useMailbox } from "./hooks/useMailbox";
+import { usePublicLobby } from "./hooks/usePublicLobby";
 import {
   createLocalGroup,
   getLocalGroups,
@@ -914,27 +915,34 @@ function ChatScreen({
   const decryptingRef = useRef(new Set<string>());
   const attemptedDecryptRef = useRef(new Set<string>());
   const decryptRetryAfterRef = useRef(new Map<string, number>());
+
+  // Public Lobby (Supabase - centralized, instant, no gas)
+  const publicLobby = usePublicLobby(isPublic ? account : undefined);
+
   const mailbox = useMailbox(
     account,
     isPublic ? undefined : (group ? undefined : peer),
     cofheStatus === "ready" && chainId === appChain.id,
     isPublic ? { publicOnly: true } : undefined,
   );
-  const visibleMessages = useMemo(
-    () =>
-      group
-        ? mailbox.messages.filter((message) => message.payload?.group?.id === group.id)
-        : mailbox.messages,
-    [group, mailbox.messages],
-  );
+  const visibleMessages = useMemo(() => {
+    if (isPublic) {
+      return publicLobby.messages;
+    }
+    return group
+      ? mailbox.messages.filter((message) => message.payload?.group?.id === group.id)
+      : mailbox.messages;
+  }, [isPublic, publicLobby.messages, group, mailbox.messages]);
   const sendRecipients = isPublic ? [] : group ? group.members : peer ? [peer] : [];
 
   useEffect(() => {
+    if (isPublic) return;
     if (chainId !== appChain.id || !isConfigured) return;
     void mailbox.refresh();
-  }, [chainId, group?.id, mailbox.refresh, peer]);
+  }, [isPublic, chainId, group?.id, mailbox.refresh, peer]);
 
   useEffect(() => {
+    if (isPublic) return;
     if (chainId !== appChain.id || !isConfigured) return;
 
     const refreshChat = async () => {
@@ -955,7 +963,7 @@ function ChatScreen({
     }, refreshInterval);
 
     return () => window.clearInterval(intervalId);
-  }, [chainId, group?.id, mailbox.error, mailbox.refresh, peer]);
+  }, [isPublic, chainId, group?.id, mailbox.error, mailbox.refresh, peer]);
 
   useEffect(() => {
     if (cofheStatus !== "ready") return;
@@ -1044,7 +1052,7 @@ function ChatScreen({
     hasPayload: Boolean(text.trim() || selectedSticker),
     isPublic,
   });
-  const isSending = isSendInProgress(mailbox.sendState);
+  const isSending = isPublic ? publicLobby.sending : isSendInProgress(mailbox.sendState);
   const canSend = !sendBlocker && !isSending;
 
   async function handleSend() {
@@ -1071,7 +1079,7 @@ function ChatScreen({
     try {
       if (isPublic) {
         setLocalNotice("Broadcasting to the Lobby...");
-        await mailbox.sendPublicMessage(payload);
+        await publicLobby.sendMessage(payload);
       } else {
         const groupPayload = group
           ? {
@@ -1141,10 +1149,14 @@ function ChatScreen({
       ) : null}
 
       <div className="message-list" aria-live="polite">
-        {visibleMessages.length ? (
-          visibleMessages.map((message) => (
+        {isPublic && publicLobby.loading ? (
+          <div className="empty-state">
+            <span>Loading the Lobby...</span>
+          </div>
+        ) : visibleMessages.length ? (
+          visibleMessages.map((message, index) => (
             <MessageBubble
-              key={message.id.toString()}
+              key={isPublic ? `pub-${(message as any).sentAt || index}-${index}` : message.id.toString()}
               message={message}
               account={account}
               decryptDisabled={cofheStatus !== "ready"}
@@ -1157,7 +1169,7 @@ function ChatScreen({
             <MessageSquarePlus size={28} />
             <span>
               {isPublic
-                ? "The Lobby is quiet. Send the first public message — it will be permanent on-chain."
+                ? "The Lobby is quiet. Send the first public message — instant & visible to everyone."
                 : "No messages yet."}
             </span>
           </div>
@@ -1219,11 +1231,11 @@ function ChatScreen({
       </form>
 
       <div className="notice-strip">
-        {mailbox.error ||
+        {isPublic ? publicLobby.error : mailbox.error ||
           cofheError ||
           localNotice ||
           sendBlocker ||
-          sendStateText(mailbox.sendState)}
+          (isPublic ? undefined : sendStateText(mailbox.sendState))}
       </div>
     </div>
   );
