@@ -245,12 +245,18 @@ export function useMailbox(
             encryptedPayload.bodyHash,
           ],
         });
+        // Gas hack for public messages:
+        // sendPublicMessage takes a variable-length `bytes body` (the full JSON payload).
+        // On Base, long calldata (especially stickers + text) can exceed Privy's default
+        // sponsored gas estimation → "intrinsic gas too low".
+        // We force a high limit here. 400k is very safe for this contract.
         const { hash: txHash } = await sendTransactionWithSponsorFallback(
           sendTransaction,
           {
             to: env.contractAddress,
             data,
             chainId: appChain.id,
+            gas: "400000",
           },
           account,
           walletClient,
@@ -450,6 +456,7 @@ async function sendWithConnectedWalletClient(
     to: request.to,
     data: request.data as Hex | undefined,
     value: request.value === undefined ? undefined : BigInt(request.value),
+    gas: request.gas !== undefined ? BigInt(request.gas) : undefined,
   });
 
   return { hash };
