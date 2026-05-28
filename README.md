@@ -64,6 +64,19 @@ Never put a funded mainnet key in `.env`.
 - `npm run deploy:arb-sepolia`: deploy to Arbitrum Sepolia.
 - `npm run deploy:base-sepolia`: deploy to Base Sepolia.
 
+## Mobile
+
+Blackout Messenger is fully adapted for mobile browsers and can be installed as a PWA (Add to Home Screen on iOS/Android).
+
+- Responsive retro UI with touch-optimized controls (42px+ tap targets)
+- Slim app bar (no desktop window chrome on phones)
+- Safe-area insets for notched devices
+- Bottom-sheet style sticker picker
+- Camera-based QR scanning works great on mobile
+- Installable via `/manifest.json` (PWA)
+
+Test on real devices or narrow viewports in dev tools. The 1990s aesthetic is preserved but density and spacing adjust for small screens.
+
 ## Docs
 
 - [Architecture](./docs/ARCHITECTURE.md)
