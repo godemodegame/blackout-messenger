@@ -1059,3 +1059,13 @@ textarea {
   opacity: 1;
   color: #a0f0f0;
 }
+
+/* Fhenix logo inside the title bar link (small, retro pixel style) */
+.title-bar .fhenix-inline img {
+  height: 14px;
+  width: auto;
+  image-rendering: pixelated;
+  margin-right: 5px;
+  vertical-align: middle;
+  display: inline-block;
+}

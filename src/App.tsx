@@ -260,6 +260,7 @@ export function App() {
               rel="noopener noreferrer"
               title="Follow Fhenix on X"
             >
+              <img src="/logo.png" alt="Fhenix" />
               powered by fhenix
             </a>
           </div>
