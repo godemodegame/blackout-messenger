@@ -74,6 +74,7 @@ Firefox has more limited PWA support. You can use the "Install" option from the 
 - **Home screen icon**: Uses the official Blackout logo (the glowing "B" on dark background).
 - **Standalone mode**: No browser UI. Feels like a real app from 1999 that somehow survived the apocalypse.
 - **Notifications**: Background message polling works when the app is closed (if you granted notification permission in the app).
+- **Badge counter**: On Android (Chrome/Edge) and some desktop browsers, the home screen / taskbar icon shows a number badge for unread encrypted messages when you have missed incoming mail while the PWA was closed. iOS Safari does not support app icon badges for PWAs — the in-app yellow "NEW ENCRYPTED MESSAGES" banner is the reliable indicator instead.
 - **Updates**: The PWA auto-updates in the background when you open it and there's a new version deployed.
 
 ---
@@ -87,6 +88,7 @@ Firefox has more limited PWA support. You can use the "Install" option from the 
 | Icon looks wrong or low-res | The manifest uses `/logo.png`. For production, replace with properly sized 192×192 and 512×512 PNGs (maskable icons are even better). |
 | App opens in browser instead of standalone | Re-install after clearing the site's data/cookies. Some browsers cache the non-PWA version. |
 | Camera / QR scanner doesn't work | Grant camera permission when prompted. On iOS the PWA must be launched from the home screen icon for full camera access in some cases. |
+| Badge counter not appearing | Only works on installed PWAs in Chromium-based browsers (Android Chrome/Edge, some Windows/macOS desktop). iOS has no support for PWA icon badges. The yellow in-app banner always works as fallback. |
 | Dev mode (localhost) | PWAs work on localhost, but some features (like camera in certain browsers) are stricter. Use a tunnel (ngrok, etc.) with HTTPS for realistic testing. |
 
 ---

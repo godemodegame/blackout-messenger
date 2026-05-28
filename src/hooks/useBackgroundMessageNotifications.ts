@@ -94,6 +94,7 @@ export function useBackgroundMessageNotifications({
       setMissedMessages([]);
       initializedRef.current = false;
       lastRefreshCountRef.current = 0;
+      updateAppBadge(0); // immediate clear on logout
       return;
     }
     const persisted = loadSeenIds(account);
@@ -115,7 +116,7 @@ export function useBackgroundMessageNotifications({
     return nextPermission;
   }, []);
 
-  // Mark current incoming messages as seen (persist + clear banner)
+  // Mark current incoming messages as seen (persist + clear banner + badge)
   const markAsSeen = useCallback(() => {
     if (!account) return;
     const currentIncoming = messages
@@ -129,6 +130,7 @@ export function useBackgroundMessageNotifications({
     seenIncomingIdsRef.current = newSeen;
     saveSeenIds(account, newSeen);
     setMissedMessages([]);
+    updateAppBadge(0); // immediate badge clear (effect will also fire)
   }, [account, messages]);
 
   // Main effect: detect new messages on refresh, handle both "background while open" and "resume after close"
@@ -207,6 +209,18 @@ export function useBackgroundMessageNotifications({
     return () => document.removeEventListener("visibilitychange", handleBecomeVisible);
   }, []);
 
+  // App badge counter (Android Chrome/Edge + some desktop; no-op on iOS Safari)
+  useEffect(() => {
+    updateAppBadge(missedMessages.length);
+  }, [missedMessages.length]);
+
+  // Clear badge on unmount (logout, SPA navigation, etc.)
+  useEffect(() => {
+    return () => {
+      updateAppBadge(0);
+    };
+  }, []);
+
   return {
     permission,
     requestPermission,
@@ -250,4 +264,24 @@ function getNotificationPermission(): BackgroundNotificationPermission {
 
 function shortAddress(address: string) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+/**
+ * Updates (or clears) the PWA home-screen badge count.
+ * Works on Android Chrome/Edge (installed PWAs) and some desktop Chromium browsers.
+ * Silently no-ops on iOS Safari and unsupported browsers.
+ */
+function updateAppBadge(count: number) {
+  const nav = navigator as any;
+  if (typeof nav.setAppBadge !== "function") return;
+
+  try {
+    if (count > 0) {
+      void nav.setAppBadge(count);
+    } else {
+      void nav.clearAppBadge();
+    }
+  } catch {
+    // Some browsers throw synchronously on unsupported calls — ignore.
+  }
 }
