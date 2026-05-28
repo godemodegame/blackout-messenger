@@ -359,6 +359,18 @@ textarea {
   font-size: 12px;
 }
 
+/* Pinned public Lobby row — golden "always on top" treatment */
+.chat-row-pinned .chat-row-main {
+  background: #fff8d6;
+  border-color: #c9a227;
+  box-shadow: 3px 3px 0 rgba(201, 162, 39, 0.28);
+}
+.chat-row-pinned .chat-row-main small {
+  color: #8a6f0a;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
 .start-chat-strip {
   display: flex;
   align-items: center;
@@ -758,6 +770,21 @@ textarea {
   color: #252525;
   background: #efeadc;
   overflow-wrap: anywhere;
+}
+
+/* Public Lobby warning banner (retro yellow danger) */
+.public-banner {
+  padding: 6px 10px;
+  background: #fff3c4;
+  border: 2px solid #c9a227;
+  border-left: none;
+  border-right: none;
+  color: #6b4e00;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.5px;
+  box-shadow: inset 0 1px #fff8d6, inset 0 -1px #d4b35c;
 }
 
 .profile-screen {

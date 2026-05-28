@@ -31,6 +31,7 @@ import {
   Smile,
   UserRound,
   UsersRound,
+  Globe,
   Wallet,
   X,
 } from "lucide-react";
@@ -79,6 +80,12 @@ type Conversation =
       count: number;
       lastMessage?: CachedMessage;
       lastSentAt: number;
+    }
+  | {
+      kind: "public";
+      count: number;
+      lastMessage?: CachedMessage;
+      lastSentAt: number;
     };
 
 type DirectConversation = {
@@ -101,6 +108,7 @@ export function App() {
   const [screen, setScreen] = useState<AppScreen>(initialPeer ? "chat" : "chats");
   const [selectedPeer, setSelectedPeer] = useState<Address | undefined>(initialPeer);
   const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>();
+  const [isPublicChat, setIsPublicChat] = useState(false);
   const [profilePeer, setProfilePeer] = useState<Address | undefined>(initialPeer);
   const [profileBackScreen, setProfileBackScreen] = useState<AppScreen>(
     initialPeer ? "chat" : "chats",
@@ -128,6 +136,30 @@ export function App() {
     refreshCount: allMailbox.refreshCount,
   });
   const { permission: notificationPermission, requestPermission: requestNotifications, missedMessages: missedIncoming, markAsSeen } = backgroundNotifications;
+
+  // Public Lobby (unencrypted, on-chain, anyone can read/write)
+  const publicMessages = useMemo(
+    () => (address ? allMailbox.messages.filter((m) => m.isPublic) : []),
+    [address, allMailbox.messages],
+  );
+  const publicConversation = useMemo<Conversation | null>(() => {
+    if (!address) return null;
+    if (publicMessages.length === 0) {
+      return {
+        kind: "public",
+        count: 0,
+        lastSentAt: Math.floor(Date.now() / 1000),
+      };
+    }
+    const last = publicMessages[publicMessages.length - 1];
+    return {
+      kind: "public",
+      count: publicMessages.length,
+      lastMessage: last,
+      lastSentAt: last.sentAt,
+    };
+  }, [address, publicMessages]);
+
   const shouldRefreshAllChats = screen === "chats" || isDocumentHidden;
 
   useEffect(() => {
@@ -135,6 +167,7 @@ export function App() {
       setScreen("chats");
       setSelectedPeer(undefined);
       setSelectedGroupId(undefined);
+      setIsPublicChat(false);
       setProfilePeer(undefined);
       setProfileBackScreen("chats");
       setWalletNotice(null);
@@ -178,10 +211,13 @@ export function App() {
     return () => window.clearInterval(intervalId);
   }, [address, allMailbox.refresh, chainId, isDocumentHidden, shouldRefreshAllChats]);
 
-  const conversations = useMemo(
-    () => (address ? buildConversations(address, allMailbox.messages, groups) : []),
-    [address, allMailbox.messages, groups],
-  );
+  const conversations = useMemo(() => {
+    const base = address ? buildConversations(address, allMailbox.messages, groups) : [];
+    if (publicConversation) {
+      return [publicConversation, ...base];
+    }
+    return base;
+  }, [address, allMailbox.messages, groups, publicConversation]);
 
   const selectedGroup = useMemo(
     () => groups.find((group) => group.id === selectedGroupId),
@@ -242,6 +278,14 @@ export function App() {
     setScreen("chat");
   }
 
+  function openPublicChat() {
+    setIsPublicChat(true);
+    setSelectedPeer(undefined);
+    setSelectedGroupId(undefined);
+    setProfilePeer(undefined);
+    setScreen("chat");
+  }
+
   function openProfile(peer: Address) {
     setProfilePeer(peer);
     setProfileBackScreen(screen === "chat" ? "chat" : "chats");
@@ -293,7 +337,24 @@ export function App() {
             onConnectWallet={() => connectWallet()}
             onSwitchNetwork={requestNetworkSwitch}
           />
-        ) : (screen === "chat" && (selectedPeer || selectedGroup)) ? (
+        ) : (screen === "chat" && isPublicChat) ? (
+          <ChatScreen
+            ready={ready}
+            authenticated={authenticated}
+            account={address}
+            chainId={chainId}
+            cofheStatus={cofheStatus}
+            cofheError={cofheError}
+            isPublic
+            onBack={() => {
+              setIsPublicChat(false);
+              setScreen("chats");
+            }}
+            onSent={() => void allMailbox.refresh()}
+            notificationPermission={notificationPermission}
+            onRequestNotifications={() => void requestNotifications()}
+          />
+        ) : (screen === "chat" && (selectedPeer || selectedGroup) && !isPublicChat) ? (
           <ChatScreen
             ready={ready}
             authenticated={authenticated}
@@ -346,6 +407,7 @@ export function App() {
             onSearchChange={setSearch}
             onStartChat={openChat}
             onOpenGroup={openGroupChat}
+            onOpenPublic={openPublicChat}
             onOpenProfile={openProfile}
             onOpenOwnProfile={() => openProfile(address)}
             onRefresh={() => void allMailbox.refresh()}
@@ -564,6 +626,7 @@ function ChatListScreen({
   onSearchChange,
   onStartChat,
   onOpenGroup,
+  onOpenPublic,
   onOpenProfile,
   onOpenOwnProfile,
   onRefresh,
@@ -585,6 +648,7 @@ function ChatListScreen({
   onSearchChange: (value: string) => void;
   onStartChat: (peer: Address) => void;
   onOpenGroup: (group: GroupChat) => void;
+  onOpenPublic?: () => void;
   onOpenProfile: (peer: Address) => void;
   onOpenOwnProfile: () => void;
   onRefresh: () => void;
@@ -598,9 +662,15 @@ function ChatListScreen({
   const [scannerOpen, setScannerOpen] = useState(false);
   const trimmedSearch = search.trim();
   const searchAddress = isAddress(trimmedSearch) ? getAddress(trimmedSearch) : undefined;
-  const filteredConversations = conversations.filter((conversation) =>
-    conversationLabel(conversation).toLowerCase().includes(trimmedSearch.toLowerCase()),
-  );
+
+  // Public Lobby is always pinned at the very top (even during search)
+  const publicConversation = conversations.find((c) => c.kind === "public");
+  const otherConversations = conversations.filter((c) => c.kind !== "public");
+  const filteredOthers = trimmedSearch
+    ? otherConversations.filter((conversation) =>
+        conversationLabel(conversation).toLowerCase().includes(trimmedSearch.toLowerCase()),
+      )
+    : otherConversations;
   const hasConversationForSearch = Boolean(
     searchAddress &&
       conversations.some(
@@ -703,8 +773,26 @@ function ChatListScreen({
         </div>
 
         <div className="chat-list">
-          {filteredConversations.length ? (
-            filteredConversations.map((conversation) => (
+          {/* Pinned public Lobby — always at the top, never filtered by search */}
+          {publicConversation ? (
+            <article className="chat-row chat-row-pinned" key="public-lobby">
+              <button
+                className="chat-row-main"
+                type="button"
+                onClick={() => onOpenPublic?.()}
+              >
+                <Globe size={18} />
+                <span>
+                  <strong>The Lobby</strong>
+                  <small>PUBLIC • unencrypted • on-chain</small>
+                </span>
+                <time>{formatTime(publicConversation.lastSentAt)}</time>
+              </button>
+            </article>
+          ) : null}
+
+          {filteredOthers.length ? (
+            filteredOthers.map((conversation) => (
               <article
                 className="chat-row"
                 key={
@@ -749,12 +837,12 @@ function ChatListScreen({
                 ) : null}
               </article>
             ))
-          ) : (
+          ) : trimmedSearch ? (
             <div className="empty-state">
               <MessageSquarePlus size={30} />
-              <span>{conversations.length ? "No matches." : "No chats yet."}</span>
+              <span>No matches.</span>
             </div>
-          )}
+          ) : null}
         </div>
 
         {searchAddress && !hasConversationForSearch ? (
@@ -792,6 +880,7 @@ function ChatScreen({
   cofheError,
   peer,
   group,
+  isPublic,
   onBack,
   onOpenProfile,
   onSent,
@@ -806,6 +895,7 @@ function ChatScreen({
   cofheError: string | null;
   peer?: Address;
   group?: GroupChat;
+  isPublic?: boolean;
   onBack: () => void;
   onOpenProfile?: () => void;
   onSent: () => void;
@@ -824,8 +914,9 @@ function ChatScreen({
   const decryptRetryAfterRef = useRef(new Map<string, number>());
   const mailbox = useMailbox(
     account,
-    group ? undefined : peer,
+    isPublic ? undefined : (group ? undefined : peer),
     cofheStatus === "ready" && chainId === appChain.id,
+    isPublic ? { publicOnly: true } : undefined,
   );
   const visibleMessages = useMemo(
     () =>
@@ -834,7 +925,7 @@ function ChatScreen({
         : mailbox.messages,
     [group, mailbox.messages],
   );
-  const sendRecipients = group ? group.members : peer ? [peer] : [];
+  const sendRecipients = isPublic ? [] : group ? group.members : peer ? [peer] : [];
 
   useEffect(() => {
     if (chainId !== appChain.id || !isConfigured) return;
@@ -944,11 +1035,12 @@ function ChatScreen({
     ready,
     authenticated,
     address: account,
-    hasRecipients: sendRecipients.length > 0,
+    hasRecipients: isPublic || sendRecipients.length > 0,
     isConfigured,
-    cofheStatus,
+    cofheStatus: isPublic ? "ready" : cofheStatus,
     chainId,
     hasPayload: Boolean(text.trim() || selectedSticker),
+    isPublic,
   });
   const isSending = isSendInProgress(mailbox.sendState);
   const canSend = !sendBlocker && !isSending;
@@ -975,22 +1067,27 @@ function ChatScreen({
         };
 
     try {
-      const groupPayload = group
-        ? {
-            ...payload,
-            group: {
-              id: group.id,
-              name: group.name,
-              members: [account, ...group.members],
-            },
-          }
-        : payload;
+      if (isPublic) {
+        setLocalNotice("Broadcasting to the Lobby...");
+        await mailbox.sendPublicMessage(payload);
+      } else {
+        const groupPayload = group
+          ? {
+              ...payload,
+              group: {
+                id: group.id,
+                name: group.name,
+                members: [account, ...group.members],
+              },
+            }
+          : payload;
 
-      for (const [index, recipient] of sendRecipients.entries()) {
-        setLocalNotice(
-          group ? `Sending encrypted copy ${index + 1} of ${sendRecipients.length}...` : null,
-        );
-        await mailbox.sendMessage(recipient, groupPayload);
+        for (const [index, recipient] of sendRecipients.entries()) {
+          setLocalNotice(
+            group ? `Sending encrypted copy ${index + 1} of ${sendRecipients.length}...` : null,
+          );
+          await mailbox.sendMessage(recipient, groupPayload);
+        }
       }
 
       setText("");
@@ -1010,12 +1107,16 @@ function ChatScreen({
         </button>
         <div className="thread-title">
           <span className="eyebrow">
-            {group ? "Encrypted group" : "Encrypted chat"}
+            {isPublic ? "Public unencrypted chat" : group ? "Encrypted group" : "Encrypted chat"}
           </span>
           <h1>
-            {group ? group.name : peer ? shortAddress(peer) : "Chat"}
+            {isPublic ? "The Lobby" : group ? group.name : peer ? shortAddress(peer) : "Chat"}
           </h1>
-          {group ? <p>{group.members.length + 1} members</p> : null}
+          {isPublic ? (
+            <p>Everyone • No encryption • On-chain</p>
+          ) : group ? (
+            <p>{group.members.length + 1} members</p>
+          ) : null}
         </div>
         <div className="thread-actions">
           <NotificationButton
@@ -1030,6 +1131,12 @@ function ChatScreen({
           ) : null}
         </div>
       </header>
+
+      {isPublic ? (
+        <div className="public-banner" role="note">
+          <span>⚠️ PUBLIC • PERMANENT • ANYONE CAN READ OR WRITE</span>
+        </div>
+      ) : null}
 
       <div className="message-list" aria-live="polite">
         {visibleMessages.length ? (
@@ -1046,7 +1153,11 @@ function ChatScreen({
         ) : (
           <div className="empty-state">
             <MessageSquarePlus size={28} />
-            <span>No messages yet.</span>
+            <span>
+              {isPublic
+                ? "The Lobby is quiet. Send the first public message — it will be permanent on-chain."
+                : "No messages yet."}
+            </span>
           </div>
         )}
       </div>
@@ -1381,6 +1492,7 @@ function buildConversations(
   const groupsById = new Map(groups.map((group) => [group.id, group]));
 
   messages.forEach((message) => {
+    if (message.isPublic) return; // handled by the dedicated Lobby entry
     if (message.payload?.group?.id) {
       const payloadGroup = message.payload.group;
       const current = groupMessagesById.get(message.payload.group.id) || [];
@@ -1451,6 +1563,7 @@ function buildConversations(
 }
 
 function conversationLabel(conversation: Conversation) {
+  if (conversation.kind === "public") return "The Lobby";
   return conversation.kind === "group"
     ? conversation.group.name
     : shortAddress(conversation.peer);
@@ -1514,6 +1627,7 @@ function getSendBlocker({
   cofheStatus,
   chainId,
   hasPayload,
+  isPublic,
 }: {
   ready: boolean;
   authenticated: boolean;
@@ -1523,13 +1637,14 @@ function getSendBlocker({
   cofheStatus: string;
   chainId?: number;
   hasPayload: boolean;
+  isPublic?: boolean;
 }) {
   if (!ready) return "Loading Privy session...";
   if (!authenticated || !address) return "Login first so the app has a sender wallet.";
   if (!isConfigured) return "Contract address is missing in .env.";
   if (chainId !== appChain.id) return `Switch wallet network to ${appChain.name}.`;
-  if (cofheStatus !== "ready") return "Waiting for Fhenix connection.";
-  if (!hasRecipients) return "Add at least one recipient.";
+  if (!isPublic && cofheStatus !== "ready") return "Waiting for Fhenix connection.";
+  if (!isPublic && !hasRecipients) return "Add at least one recipient.";
   if (!hasPayload) return "Type a message or pick a sticker.";
   return null;
 }
