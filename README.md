@@ -55,6 +55,22 @@ npm run dev
 
 Never put a funded mainnet key in `.env`.
 
+## Gas Sponsorship (for embedded wallets)
+
+When users log in with email / social (no external wallet), Privy creates an **embedded wallet**.
+
+Sending encrypted messages costs a tiny amount of testnet gas. By default the user would have to fund it from a faucet (the app shows an in-UI link to the Alchemy Base Sepolia faucet when your balance is low and you try to send).
+
+**To make it feel gasless** for your users:
+
+1. Go to https://dashboard.privy.io → your app → **Gas Sponsorship**
+2. Enable sponsorship for the chains you support (Base Sepolia, Arbitrum Sepolia, etc.).
+3. (Optional) Create a policy with limits so you don't get surprised by the bill.
+
+The app will automatically try to use sponsorship. If it fails for any reason (not enabled, quota hit, transaction too large for the policy, etc.), it silently falls back to the user paying the (very small) testnet gas themselves.
+
+The public "Lobby" chat now uses Supabase Realtime instead of on-chain `sendPublicMessage`, so it is completely gasless.
+
 ## Scripts
 
 - `npm run dev`: start the webapp.

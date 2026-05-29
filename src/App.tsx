@@ -916,6 +916,13 @@ function ChatScreen({
   const attemptedDecryptRef = useRef(new Set<string>());
   const decryptRetryAfterRef = useRef(new Map<string, number>());
 
+  // Track gas balance so we can warn + link to faucet when the user wants to send
+  // but the embedded wallet has no (or almost no) testnet ETH for gas.
+  const myGasBalance = useBalance({
+    address: account,
+    chainId: appChain.id,
+  });
+
   // Public Lobby (Supabase - centralized, instant, no gas)
   const publicLobby = usePublicLobby(isPublic ? account : undefined);
 
@@ -1041,6 +1048,8 @@ function ChatScreen({
     [mailbox.decryptMessage],
   );
 
+  const hasPayload = Boolean(text.trim() || selectedSticker);
+
   const sendBlocker = getSendBlocker({
     ready,
     authenticated,
@@ -1049,11 +1058,22 @@ function ChatScreen({
     isConfigured,
     cofheStatus: isPublic ? "ready" : cofheStatus,
     chainId,
-    hasPayload: Boolean(text.trim() || selectedSticker),
+    hasPayload,
     isPublic,
   });
   const isSending = isPublic ? publicLobby.sending : isSendInProgress(mailbox.sendState);
   const canSend = !sendBlocker && !isSending;
+
+  // If the user has typed/picked something to send, but their gas balance is tiny,
+  // show a helpful notice with the faucet link instead of the normal status.
+  const FAUCET_URL = "https://www.alchemy.com/faucets/base-sepolia";
+  const LOW_GAS_THRESHOLD = 500_000_000_000_000n; // 0.0005 ETH — covers a few small Base txs
+  const gasValue = myGasBalance.data?.value ?? 0n;
+  const isLowGas = !myGasBalance.isLoading && gasValue < LOW_GAS_THRESHOLD;
+  const gasWarning = isLowGas
+    ? `Low gas balance on ${appChain.name}. You need a tiny bit of ${appChain.nativeCurrency?.symbol || "ETH"} to send.`
+    : null;
+  const showGasWarning = Boolean(gasWarning && hasPayload && !sendBlocker && !isPublic);
 
   async function handleSend() {
     const trimmedText = text.trim();
@@ -1231,11 +1251,25 @@ function ChatScreen({
       </form>
 
       <div className="notice-strip">
-        {isPublic ? publicLobby.error : mailbox.error ||
-          cofheError ||
-          localNotice ||
-          sendBlocker ||
-          (isPublic ? undefined : sendStateText(mailbox.sendState))}
+        {showGasWarning ? (
+          <span>
+            {gasWarning}{" "}
+            <a
+              href={FAUCET_URL}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: "inherit", textDecoration: "underline", fontWeight: 600 }}
+            >
+              Open Alchemy Faucet →
+            </a>
+          </span>
+        ) : (
+          isPublic ? publicLobby.error : mailbox.error ||
+            cofheError ||
+            localNotice ||
+            sendBlocker ||
+            (isPublic ? undefined : sendStateText(mailbox.sendState))
+        )}
       </div>
     </div>
   );

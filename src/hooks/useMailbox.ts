@@ -15,6 +15,9 @@ import {
 import { usePublicClient, useWalletClient } from "wagmi";
 import { appChain } from "../config/chains";
 import { env } from "../config/env";
+
+// When true, never attempt sponsorship (everyone pays their own gas).
+const FORCE_USER_PAID_GAS = env.forceUserPaidGas;
 import { blackoutMessengerAbi } from "../contracts/blackoutMessengerAbi";
 import { fetchMailboxMessages } from "../lib/chainMessages";
 import {
@@ -256,6 +259,8 @@ export function useMailbox(
           account,
           walletClient,
           activeWallet,
+          undefined,
+          FORCE_USER_PAID_GAS,
         );
 
         setSendState("confirming");
@@ -323,6 +328,7 @@ export function useMailbox(
           walletClient,
           activeWallet,
           "400000",
+          FORCE_USER_PAID_GAS,
         );
 
         setSendState("confirming");
@@ -403,6 +409,8 @@ async function ensureDecryptorAllowed({
       account,
       walletClient,
       activeWallet,
+      undefined,
+      FORCE_USER_PAID_GAS,
     );
 
     await publicClient.waitForTransactionReceipt({ hash });
@@ -416,16 +424,26 @@ async function sendTransactionWithSponsorFallback(
   walletClient?: WalletClient,
   activeWallet?: ActiveWallet,
   gas?: string | bigint,
+  forceUserPaid = false,
 ) {
   if (!isEmbeddedWalletForAccount(activeWallet, account)) {
     return sendWithConnectedWalletClient(walletClient, request, account, gas);
   }
 
-  // Apply explicit gas override when provided (used for public Lobby messages)
+  if (forceUserPaid) {
+    console.log("[sendTransaction] VITE_FORCE_USER_PAID_GAS=true → skipping sponsorship attempt");
+    return sendTransaction(
+      gas ? ({ ...request, gas: BigInt(gas) } as any) : request,
+      { address: account },
+    );
+  }
+
+  // Apply explicit gas override when provided (used for public Lobby messages with long payloads)
   const sponsorRequest = gas
     ? ({ ...request, gas: BigInt(gas) } as any)
     : request;
 
+  // Try sponsored first (Privy pays the gas via their dashboard policy)
   try {
     return await sendTransaction(sponsorRequest, {
       address: account,
@@ -433,10 +451,27 @@ async function sendTransactionWithSponsorFallback(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (!message.includes("Cannot sponsor transactions for externally connected wallet")) {
+
+    // Any of these mean "we cannot / should not use sponsorship right now".
+    // Fall back to the user paying gas from their embedded wallet balance instead of failing hard.
+    const isSponsorshipFailure =
+      message.includes("Cannot sponsor transactions for externally connected wallet") ||
+      message.includes("sponsorship") ||
+      message.includes("sponsor") ||
+      message.includes("gas sponsorship") ||
+      message.includes("No active sponsorship policy") ||
+      message.includes("Sponsorship not enabled") ||
+      message.includes("intrinsic gas too low") ||
+      message.includes("sponsored gas");
+
+    if (!isSponsorshipFailure) {
+      // Some other unrelated error (contract revert, network, etc.) — surface it.
       throw error;
     }
 
+    console.warn("[sendTransaction] Sponsorship attempt failed, falling back to user-paid gas:", message);
+
+    // Fallback: user pays gas themselves (works as long as the embedded wallet has a tiny bit of testnet ETH)
     return sendTransaction(sponsorRequest, {
       address: account,
     });
@@ -525,8 +560,23 @@ function wait(ms: number) {
 }
 
 function formatSendError(message: string) {
-  if (message.includes("ZK proof verification failed") && message.includes("Failed to fetch")) {
+  const lower = message.toLowerCase();
+
+  if (lower.includes("zk proof verification failed") && lower.includes("failed to fetch")) {
     return "Fhenix ZK verifier could not be reached. Check connection and try sending again.";
+  }
+
+  // Common Privy gas sponsorship / embedded wallet gas issues
+  if (
+    lower.includes("sponsorship") ||
+    lower.includes("sponsor") ||
+    (lower.includes("gas") && (lower.includes("too low") || lower.includes("estimation")))
+  ) {
+    return "Gas sponsorship is not available right now (or the transaction is too large). The app fell back to you paying a tiny amount of testnet gas. Get testnet ETH from the faucet: https://www.alchemy.com/faucets/base-sepolia";
+  }
+
+  if (lower.includes("insufficient funds") || lower.includes("insufficient balance")) {
+    return "Your wallet doesn't have enough of the native token to pay for gas. Get free testnet ETH: https://www.alchemy.com/faucets/base-sepolia";
   }
 
   return message;

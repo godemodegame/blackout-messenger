@@ -23,6 +23,11 @@ export function Providers({ children }: { children: ReactNode }) {
         embeddedWallets: {
           ethereum: {
             createOnLogin: "users-without-wallets",
+            // Gas sponsorship for embedded wallets is controlled in the Privy Dashboard:
+            // https://dashboard.privy.io → Your App → Gas Sponsorship
+            // You must explicitly enable it for each supported chain (Base Sepolia, etc.)
+            // and optionally create a policy. Without it, `sponsor: true` calls will fall back
+            // to the user paying gas (see sendTransactionWithSponsorFallback in useMailbox.ts).
           },
         },
       }}

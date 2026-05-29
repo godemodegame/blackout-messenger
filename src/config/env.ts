@@ -15,6 +15,9 @@ export const env = {
     "arb-sepolia": import.meta.env.VITE_ARBITRUM_SEPOLIA_RPC_URL || undefined,
     "base-sepolia": import.meta.env.VITE_BASE_SEPOLIA_RPC_URL || undefined,
   } satisfies Record<FhenixChainName, string | undefined>,
+  // Set to "true" to force all on-chain sends to be user-paid (skip sponsorship attempts).
+  // Useful for debugging or when your Privy sponsorship quota is exhausted.
+  forceUserPaidGas: (import.meta.env.VITE_FORCE_USER_PAID_GAS || "").toLowerCase() === "true",
 };
 
 export const isConfigured = Boolean(env.privyAppId && env.hasContractAddress);
