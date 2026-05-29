@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { supabase, type LobbyMessageRow } from "../lib/supabase";
+import {
+  supabase,
+  type LobbyMessageRow,
+} from "../lib/supabase";
 import type { MessagePayload, CachedMessage } from "../types/messages";
 import { Address } from "viem";
 
@@ -81,7 +84,7 @@ export function usePublicLobby(account?: Address): UsePublicLobbyResult {
           schema: "public",
           table: TABLE,
         },
-        (payload) => {
+        (payload: any) => {
           const newRow = payload.new as LobbyMessageRow;
           const newMsg = rowToMessage(newRow);
 
@@ -92,7 +95,7 @@ export function usePublicLobby(account?: Address): UsePublicLobbyResult {
           });
         },
       )
-      .subscribe((status) => {
+      .subscribe((status: any) => {
         if (status === "SUBSCRIBED") {
           // connected
         }
